@@ -77,7 +77,19 @@ Before establishing a business relationship, the firm must (s.33 and s.35):
 3. Identify and take reasonable measures to verify every beneficial owner of a corporate customer.
 4. Understand the purpose and intended nature of the relationship, including expected activity and source of funds.
 
-**Rule in the simulator:** if identity verification fails, the ID document has expired, or a corporate customer has no identified UBO, CDD is **incomplete**. The case cannot be approved. It can only be returned for more information or rejected. Section 33 does not allow a business relationship to proceed where CDD cannot be applied.
+### 5.1 Business verification
+
+Companies, trusts and sole traders are also checked on the official register, and the register and number are recorded with the case:
+
+| Country | Register |
+|---|---|
+| Ireland | CRO (Companies Registration Office) for companies; RBO (Register of Beneficial Ownership) for beneficial owners |
+| Portugal | Certidão Permanente from the Registo Comercial; for a sole trader (empresário em nome individual), the NIF and the start of activity with the tax authority |
+| Brazil | CNPJ record from the Receita Federal, compared with the articles of association (contrato social) |
+
+The identity document type is recorded too (passport, national ID card such as the Portuguese Cartão de Cidadão or the Brazilian RG, residence permit or driving licence).
+
+**Rule in the simulator:** if identity verification fails, the ID document has expired, the business registration was not verified on the official register, or a corporate customer has no identified UBO, CDD is **incomplete**. The case cannot be approved. It can only be returned for more information or rejected. Section 33 does not allow a business relationship to proceed where CDD cannot be applied.
 
 ## 6. Enhanced due diligence (EDD)
 
@@ -177,7 +189,42 @@ Customers are reviewed periodically according to their risk tier. The intervals 
 | Medium | Every 24 months |
 | Low | Every 36 months |
 
-A review is also triggered by any material change, such as a new UBO, a new sanctions designation or adverse media.
+A review is also triggered by any material change (event driven review). CDD applies to existing customers when their relevant circumstances change (s.33), and the relationship is monitored on an ongoing basis (s.35(3)).
+
+### 12.1 Review triggers
+
+| Trigger | Example |
+|---|---|
+| Periodic | Review date reached (status Due soon from 30 days before, Overdue after) |
+| Change of beneficial ownership or control | New shareholder above 25% |
+| Activity inconsistent with the expected profile | Monthly volume rises from EUR 3,000 to EUR 60,000 |
+| Change of country | Customer moves to a non EEA or high risk third country |
+| Identity document expired | Cartão de Cidadão or passport expires during the relationship |
+| New adverse media, change in PEP status, sanctions list update | Any of these |
+
+### 12.2 Review procedure
+
+1. The analyst starts the review and records the trigger. The case returns to **Pending review**.
+2. The customer is re-screened against the current lists and the documents are checked **against the review date**, not the onboarding date. An ID that expired since onboarding makes CDD incomplete.
+3. Changed data (volume, source of funds, country, ID expiry, PEP status, adverse media, new UBO) is updated and logged with the before and after values, then the case is re-screened and re-scored.
+4. The case needs a new decision under the normal rules. Approving it continues the relationship and sets the next review date; rejecting it exits the relationship. Both are kept in the review history.
+
+## 12A. Exceptions
+
+An exception is a documented, time limited deviation from this policy, for example an expired document while the renewal is pending. Internal policies, controls and procedures are required by s.54.
+
+* Each exception records the type, the deviation, the **mitigating control** and a **resolution date of at most 90 days**. Anything longer is escalated to the MLRO.
+* It is raised by the analyst and approved or rejected by a **senior analyst or the MLRO who did not raise it** (four eyes).
+* An approved exception past its date shows as **Overdue** until it is closed with a note on how it was resolved.
+* An exception **never overrides** the fail closed rules: incomplete CDD, unreviewed screening hits and sanctions matches still block approval.
+
+## 12B. Quality assurance
+
+* **Sample:** every High risk decision and 1 in 4 of the Low and Medium risk decisions. The sample is deterministic, so a case is always in or out.
+* **Reviewer:** a senior analyst or the MLRO who did **not** take the decision (independence).
+* **Checklist:** identity and business verification evidenced; screening hits reviewed with a reason; risk rating consistent; EDD evidence adequate (cannot be N/A on High risk); decision within delegated authority; rationale clear and supported.
+* Any failed check fails the case and needs a written finding for the analyst. Results feed the pass rate by analyst and the error trend by check.
+* A new decision after a review moves the old QA result to the history.
 
 ## 13. Metrics and reporting
 
@@ -189,6 +236,10 @@ The dashboard reports the following KYC and AML metrics so that management can m
 * Escalation rate to the MLRO
 * Average time from case creation to decision
 * Cases with incomplete CDD
+* Reviews overdue, due in the next 30 days, in progress and completed
+* Open, overdue and pending exceptions
+* QA sample size, pass rate, errors by check and pass rate by analyst
+* Ageing of open cases and cases over the 48 hour service level
 
 ## 14. Limitations of this project
 

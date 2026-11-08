@@ -117,6 +117,17 @@
     switch (action) {
       case 'create_case':
       case 'rescreen':
+      case 'start_review':
+      case 'raise_exception':
+      case 'close_exception':
+        return null;
+      case 'decide_exception':
+        if (r !== 'senior' && r !== 'mlro') return 'Exceptions are approved by a senior analyst or the MLRO.';
+        if (extra && extra.exception && extra.exception.raisedById === user.id) return 'Four eyes rule: the approver must be a different person from the one who raised the exception.';
+        return null;
+      case 'qa_review':
+        if (r !== 'senior' && r !== 'mlro') return 'Quality assurance is done by a senior analyst or the MLRO.';
+        if (extra && extra.deciderId && extra.deciderId === user.id) return 'Independence: QA must be done by someone other than the person who decided the case.';
         return null;
       case 'manage_lists':
       case 'manage_users':
@@ -140,6 +151,7 @@
           if (r === 'analyst' && !user.delegatedAuthority) return 'No delegated approval authority yet. Escalate or ask a senior analyst.';
           if (a.tier === 'High' && r === 'analyst') return 'High risk approvals are above analyst delegated authority.';
           if (a.mandatoryEDD.length && user.id === c.createdById) return 'Four eyes rule: the senior approver must be a different person from the analyst who prepared the case.';
+          if (a.mandatoryEDD.length && c.openReview && user.id === c.openReview.startedById) return 'Four eyes rule: the approver must be a different person from the one who carried out the review.';
         }
         if (action === 'reject' && a.tier === 'High' && r === 'analyst') return 'High risk rejections need a senior analyst or the MLRO.';
         return null;
@@ -316,7 +328,11 @@
     if (c.adverseMedia) add('Adverse media linked to financial crime', 20, 'CJA 2010 s.39');
 
     if (!c.idVerified) cddIssues.push('Identity not verified against a reliable independent source (s.33)');
-    if (c.idExpiry && c.createdAt && c.idExpiry < String(c.createdAt).slice(0, 10)) cddIssues.push('Identity document expired (s.33)');
+    // During a review the document is checked against the review date, not the onboarding date.
+    var asOf = String(c.reviewAsOf || c.createdAt || '').slice(0, 10);
+    if (c.idExpiry && asOf && c.idExpiry < asOf) cddIssues.push('Identity document expired (s.33)');
+    // Business verification: only evaluated when the field was captured (older cases have no value).
+    if (c.registryVerified === false && c.customerType !== 'individual') cddIssues.push('Business registration not verified against the official register (s.33)');
 
     var score = factors.reduce(function (s, f) { return s + f.points; }, 0);
     var tier = TIERS.filter(function (t) { return score >= t.min && score <= t.max; })[0].id;
@@ -460,13 +476,223 @@
     return m;
   }
 
+  // ---------------------------------------------------------------------------
+  // Identity documents and business registers (POLICY.md section 5)
+  // ---------------------------------------------------------------------------
+
+  var ID_DOC_TYPES = [
+    { id: 'passport', name: 'Passport' },
+    { id: 'national_id', name: 'National ID card (e.g. Cartão de Cidadão, RG)' },
+    { id: 'residence_permit', name: 'Residence permit (e.g. IRP card)' },
+    { id: 'driving_licence', name: 'Driving licence' }
+  ];
+
+  var REGISTRIES = [
+    { id: 'cro', name: 'CRO, Companies Registration Office (Ireland)' },
+    { id: 'rbo', name: 'RBO, Register of Beneficial Ownership (Ireland)' },
+    { id: 'certidao', name: 'Certidão Permanente, Registo Comercial (Portugal)' },
+    { id: 'cnpj', name: 'CNPJ, Receita Federal (Brazil)' },
+    { id: 'other', name: 'Other official register' }
+  ];
+
+  // ---------------------------------------------------------------------------
+  // Ongoing monitoring: periodic and event driven reviews (POLICY.md section 12)
+  // ---------------------------------------------------------------------------
+
+  var REVIEW_DUE_SOON_DAYS = 30;
+  var REVIEW_TRIGGERS = [
+    { id: 'periodic', name: 'Periodic review (scheduled by risk tier)' },
+    { id: 'ownership', name: 'Change of beneficial ownership or control' },
+    { id: 'activity', name: 'Activity inconsistent with the expected profile' },
+    { id: 'country', name: 'Change of country of residence or establishment' },
+    { id: 'id_expired', name: 'Identity document expired' },
+    { id: 'adverse_media', name: 'New adverse media' },
+    { id: 'pep', name: 'Change in PEP status' },
+    { id: 'sanctions_update', name: 'Sanctions list update' }
+  ];
+
+  function dayDiff(from, to) { return Math.floor((new Date(to) - new Date(from)) / 864e5); }
+
+  // Calendar day in the user's own time zone (a date picker gives local dates, not UTC ones).
+  function localDay(iso) {
+    var d = new Date(iso), p = function (n) { return (n < 10 ? '0' : '') + n; };
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+  }
+  function isRealDate(s) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s || '')) return false;
+    var d = new Date(s + 'T00:00:00Z');
+    return !isNaN(d) && d.toISOString().slice(0, 10) === s;
+  }
+  function calendarDays(fromDay, toDay) { return Math.round((new Date(toDay + 'T00:00:00Z') - new Date(fromDay + 'T00:00:00Z')) / 864e5); }
+
+  // Review position of a case at a given time. Null when the case is not an active relationship.
+  function reviewState(c, now) {
+    now = now || new Date().toISOString();
+    if (c.openReview) return { state: 'In progress', days: dayDiff(c.openReview.startedAt, now) };
+    if (c.status !== 'Approved' || !c.nextReview) return null;
+    var diff = (new Date(c.nextReview) - new Date(now)) / 864e5;
+    var d = diff < 0 ? Math.floor(diff) : Math.ceil(diff);
+    return { state: diff < 0 ? 'Overdue' : (d <= REVIEW_DUE_SOON_DAYS ? 'Due soon' : 'Scheduled'), days: d };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Exceptions register (POLICY.md section 12A)
+  // ---------------------------------------------------------------------------
+
+  var EXCEPTION_MAX_DAYS = 90;
+  var EXCEPTION_TYPES = [
+    { id: 'doc_renewal', name: 'Expired document, renewal requested' },
+    { id: 'old_proof', name: 'Proof of address older than policy allows' },
+    { id: 'review_overdue', name: 'Periodic review overdue' },
+    { id: 'late_info', name: 'Information request past the deadline' },
+    { id: 'other', name: 'Other documented policy deviation' }
+  ];
+
+  // An exception documents a deviation, its mitigation and a deadline. It never overrides the
+  // fail closed rules: incomplete CDD or an open sanctions hit still block approval.
+  function validateException(x, now) {
+    now = now || new Date().toISOString();
+    if (!x || !find(EXCEPTION_TYPES, 'id', x.type)) return 'Choose the type of exception.';
+    if (!x.description || x.description.trim().length < 15) return 'Describe the deviation (at least 15 characters).';
+    if (!x.mitigation || x.mitigation.trim().length < 10) return 'Record the mitigating control (at least 10 characters).';
+    if (!isRealDate(x.expiresOn)) return 'Set the date by which the exception must be resolved.';
+    var days = calendarDays(localDay(now), x.expiresOn);
+    if (days < 1) return 'The resolution date must be in the future.';
+    if (days > EXCEPTION_MAX_DAYS) return 'Exceptions can last at most ' + EXCEPTION_MAX_DAYS + ' days. Escalate to the MLRO for anything longer.';
+    return null;
+  }
+
+  function exceptionState(x, now) {
+    var today = localDay(now || new Date().toISOString());
+    if (x.status === 'Approved' && x.expiresOn < today) return 'Overdue';
+    return x.status;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Quality assurance (POLICY.md section 12B)
+  // ---------------------------------------------------------------------------
+
+  var QA_CHECKS = [
+    { id: 'id', name: 'Identity and business verification evidenced' },
+    { id: 'screening', name: 'Screening hits reviewed with a recorded reason' },
+    { id: 'risk', name: 'Risk rating consistent with the customer profile' },
+    { id: 'edd', name: 'EDD evidence adequate (High risk only)' },
+    { id: 'authority', name: 'Decision within delegated authority and policy' },
+    { id: 'rationale', name: 'Rationale clear and supported by evidence' }
+  ];
+  var QA_SAMPLE_EVERY = 4; // 1 in 4 Low and Medium risk decisions, plus every High risk decision
+
+  function isDecided(c) { return c.status === 'Approved' || c.status === 'Rejected'; }
+
+  // Deterministic sample, so the same case is always in or out of the sample.
+  function qaSelected(c) {
+    if (!isDecided(c)) return false;
+    if (c.assessment && c.assessment.tier === 'High') return true;
+    var n = Number(String(c.id || '').replace(/\D/g, '')) || 0;
+    return n % QA_SAMPLE_EVERY === 0;
+  }
+
+  // The user who took the final approve or reject decision.
+  function decider(c) {
+    var a = (c.audit || []).filter(function (e) { return e.type === 'approve' || e.type === 'reject'; });
+    return a.length ? { id: a[a.length - 1].userId, label: a[a.length - 1].by } : null;
+  }
+
+  function validateQA(results, note, c) {
+    var high = c && c.assessment && c.assessment.tier === 'High';
+    for (var i = 0; i < QA_CHECKS.length; i++) {
+      var v = results && results[QA_CHECKS[i].id];
+      if (['pass', 'fail', 'na'].indexOf(v) === -1) return 'Answer every check: ' + QA_CHECKS[i].name + '.';
+      if (QA_CHECKS[i].id === 'edd' && high && v === 'na') return 'EDD cannot be marked not applicable on a High risk case.';
+    }
+    var failed = QA_CHECKS.filter(function (q) { return results[q.id] === 'fail'; });
+    if (failed.length && (!note || note.trim().length < 15)) return 'Describe the errors found (at least 15 characters) so the analyst can correct them.';
+    return null;
+  }
+
+  function scoreQA(results) {
+    var failed = QA_CHECKS.filter(function (q) { return results[q.id] === 'fail'; }).map(function (q) { return q.id; });
+    return { outcome: failed.length ? 'Fail' : 'Pass', failed: failed };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Operational metrics: monitoring, exceptions, quality and service levels (section 13)
+  // ---------------------------------------------------------------------------
+
+  var SLA_HOURS = 48;
+
+  function opsMetrics(cases, exceptions, now) {
+    now = now || new Date().toISOString();
+    var m = {
+      reviewsOverdue: 0, reviewsDueSoon: 0, reviewsInProgress: 0, reviewsCompleted: 0,
+      exceptionsOpen: 0, exceptionsOverdue: 0, exceptionsPending: 0,
+      qaSampled: 0, qaDone: 0, qaPassed: 0, qaPassRate: 0, qaErrors: {},
+      openCases: 0, slaBreaches: 0, ageing: { 'Under 1 day': 0, '1 to 2 days': 0, '3 to 5 days': 0, 'Over 5 days': 0 },
+      byAnalyst: []
+    };
+    QA_CHECKS.forEach(function (q) { m.qaErrors[q.id] = 0; });
+    var analysts = {};
+    function analyst(id, label) { if (!analysts[id]) analysts[id] = { userId: id, name: label, decisions: 0, qaDone: 0, qaPassed: 0 }; return analysts[id]; }
+
+    cases.forEach(function (c) {
+      var rs = reviewState(c, now);
+      if (rs) {
+        if (rs.state === 'Overdue') m.reviewsOverdue++;
+        else if (rs.state === 'Due soon') m.reviewsDueSoon++;
+        else if (rs.state === 'In progress') m.reviewsInProgress++;
+      }
+      m.reviewsCompleted += (c.reviews || []).length;
+
+      if (c.status === 'Pending review' || c.status === 'Info requested' || c.status === 'Escalated') {
+        m.openCases++;
+        var since = c.openReview ? c.openReview.startedAt : c.createdAt;
+        var h = (new Date(now) - new Date(since)) / 36e5;
+        if (h > SLA_HOURS) m.slaBreaches++;
+        var bucket = h < 24 ? 'Under 1 day' : h < 72 ? '1 to 2 days' : h < 144 ? '3 to 5 days' : 'Over 5 days';
+        m.ageing[bucket]++;
+      }
+
+      var d = decider(c);
+      if (d && d.id) analyst(d.id, d.label).decisions++;
+      if (qaSelected(c)) m.qaSampled++;
+      // Current QA result plus earlier ones moved to the history when a review reopened the case.
+      (c.qaHistory || []).concat(c.qa ? [c.qa] : []).forEach(function (q) {
+        m.qaDone++;
+        if (q.outcome === 'Pass') m.qaPassed++;
+        (q.failed || []).forEach(function (f) { m.qaErrors[f] = (m.qaErrors[f] || 0) + 1; });
+        var who = q.deciderId ? { id: q.deciderId, label: q.decidedBy } : d;
+        if (who && who.id) { var an = analyst(who.id, who.label); an.qaDone++; if (q.outcome === 'Pass') an.qaPassed++; }
+      });
+    });
+
+    (exceptions || []).forEach(function (x) {
+      var st = exceptionState(x, now);
+      if (st === 'Pending approval') m.exceptionsPending++;
+      if (st === 'Pending approval' || st === 'Approved' || st === 'Overdue') m.exceptionsOpen++;
+      if (st === 'Overdue') m.exceptionsOverdue++;
+    });
+
+    m.qaPassRate = m.qaDone ? Math.round((m.qaPassed / m.qaDone) * 1000) / 10 : 0;
+    m.byAnalyst = Object.keys(analysts).map(function (k) {
+      var a = analysts[k];
+      a.qaPassRate = a.qaDone ? Math.round((a.qaPassed / a.qaDone) * 1000) / 10 : null;
+      return a;
+    }).sort(function (x, y) { return y.decisions - x.decisions; });
+    return m;
+  }
+
   var api = {
     COUNTRIES: COUNTRIES, HIGH_RISK_THIRD_COUNTRIES: HIGH_RISK_THIRD_COUNTRIES, SECTORS: SECTORS,
     CUSTOMER_TYPES: CUSTOMER_TYPES, SAMPLE_SANCTIONS: SAMPLE_SANCTIONS, SAMPLE_PEPS: SAMPLE_PEPS,
     THRESHOLDS: THRESHOLDS, TIERS: TIERS, ROLES: ROLES, DEMO_USERS: DEMO_USERS, authorize: authorize,
     normalize: normalize, jaroWinkler: jaroWinkler, nameSimilarity: nameSimilarity,
     screenName: screenName, screenCase: screenCase, assess: assess, recommend: recommend,
-    validateDecision: validateDecision, parseSanctionsCSV: parseSanctionsCSV, metrics: metrics
+    validateDecision: validateDecision, parseSanctionsCSV: parseSanctionsCSV, metrics: metrics,
+    ID_DOC_TYPES: ID_DOC_TYPES, REGISTRIES: REGISTRIES,
+    REVIEW_TRIGGERS: REVIEW_TRIGGERS, REVIEW_DUE_SOON_DAYS: REVIEW_DUE_SOON_DAYS, reviewState: reviewState,
+    EXCEPTION_TYPES: EXCEPTION_TYPES, EXCEPTION_MAX_DAYS: EXCEPTION_MAX_DAYS, validateException: validateException, exceptionState: exceptionState,
+    QA_CHECKS: QA_CHECKS, QA_SAMPLE_EVERY: QA_SAMPLE_EVERY, qaSelected: qaSelected, decider: decider, validateQA: validateQA, scoreQA: scoreQA,
+    SLA_HOURS: SLA_HOURS, opsMetrics: opsMetrics
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

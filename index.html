@@ -105,6 +105,9 @@
   .t-Low { background: var(--low); } .t-Medium { background: var(--med); } .t-High { background: var(--high); }
   .s-Approved { background: var(--low); } .s-Rejected { background: var(--high); } .s-Escalated { background: var(--purple); }
   .s-Pending { background: var(--info); } .s-Info { background: var(--grey); }
+  .r-Overdue { background: var(--high); } .r-Due { background: var(--med); } .r-In { background: var(--info); } .r-Scheduled { background: var(--grey); }
+  .x-Pending { background: var(--med); } .x-Approved { background: var(--info); } .x-Overdue { background: var(--high); } .x-Rejected { background: var(--grey); } .x-Closed { background: var(--low); }
+  .q-Pass { background: var(--low); } .q-Fail { background: var(--high); }
   .h-strong { background: var(--high); } .h-potential { background: var(--med); } .h-cleared { background: var(--low); } .h-true { background: var(--purple); }
   .muted { color: var(--muted); }
   .rec { border-left: 4px solid var(--info); background: rgba(37,99,235,.1); padding: 10px 14px; border-radius: 8px; margin: 8px 0 14px; }
@@ -167,6 +170,9 @@
     <button data-view="dashboard" class="active">Dashboard</button>
     <button data-view="new">New case</button>
     <button data-view="queue">Case queue</button>
+    <button data-view="reviews">Reviews</button>
+    <button data-view="exceptions">Exceptions</button>
+    <button data-view="quality">Quality (QA)</button>
     <button data-view="lists">Watchlists</button>
     <button data-view="access">Access control</button>
     <button data-view="policy">Policy</button>
@@ -198,6 +204,13 @@
       <div class="card"><h3>Screening</h3><div id="chart-hits"></div></div>
       <div class="card"><h3>Control effectiveness</h3><div id="chart-controls"></div></div>
     </div>
+    <h2 style="margin:24px 0 12px">Ongoing monitoring and quality</h2>
+    <div class="grid kpis" id="kpis2"></div>
+    <div class="grid two" style="margin-top:14px">
+      <div class="card"><h3>Ageing of open cases (SLA 48 h)</h3><div id="chart-ageing"></div></div>
+      <div class="card"><h3>QA errors by check</h3><div id="chart-qa"></div></div>
+    </div>
+    <div class="card" style="margin-top:14px"><h3>Analyst performance</h3><table><thead><tr><th>Analyst</th><th>Decisions</th><th>QA reviewed</th><th>QA pass rate</th></tr></thead><tbody id="analyst-body"></tbody></table></div>
   </section>
 
   <!-- NEW CASE -->
@@ -216,8 +229,19 @@
           <div class="field"><label>Business sector or occupation</label><select name="sector" id="f-sector"></select></div>
         </div>
         <div class="row">
+          <div class="field"><label>ID document type</label><select name="idDocType" id="f-iddoc"></select></div>
           <div class="field"><label>ID document expiry date</label><input type="date" name="idExpiry"></div>
+        </div>
+        <div class="row">
           <div class="field" style="padding-top:22px"><label class="check"><input type="checkbox" name="idVerified"> Identity verified against a reliable, independent source</label></div>
+        </div>
+
+        <div id="biz-block" class="hidden">
+          <div class="row">
+            <div class="field"><label>Business register</label><select name="registry" id="f-registry"></select></div>
+            <div class="field"><label>Registration number</label><input type="text" name="registryNumber" placeholder="e.g. CRO 612345, NIPC 509876543, CNPJ 12.345.678/0001-90"></div>
+          </div>
+          <label class="check"><input type="checkbox" name="registryVerified"> Registration and directors checked on the official register</label>
         </div>
 
         <div id="ubo-block" class="hidden">
@@ -255,6 +279,45 @@
     <div class="card" style="padding:4px 8px"><table>
       <thead><tr><th>Case</th><th>Customer</th><th>Type</th><th>Country</th><th>Risk</th><th>Hits</th><th>Status</th><th>Created</th></tr></thead>
       <tbody id="q-body"></tbody>
+    </table></div>
+  </section>
+
+  <!-- REVIEWS (ongoing CDD) -->
+  <section id="view-reviews" class="hidden">
+    <div class="toolbar">
+      <h2 style="margin:0 auto 0 0">Ongoing CDD: periodic and event driven reviews</h2>
+      <select id="r-filter" style="max-width:200px"><option value="">All active relationships</option><option>Overdue</option><option>Due soon</option><option>In progress</option><option>Scheduled</option></select>
+    </div>
+    <p class="muted" style="margin-top:-4px">Approved customers are reviewed every 12, 24 or 36 months by risk tier, and immediately when something material changes (s.33, s.35(3)). A review re-screens the customer, re-checks the documents on the review date and needs a new decision.</p>
+    <div class="grid kpis" id="r-kpis" style="margin-bottom:14px"></div>
+    <div class="card" style="padding:4px 8px"><table>
+      <thead><tr><th>Case</th><th>Customer</th><th>Risk</th><th>Review</th><th>Next review</th><th>Last review</th><th></th></tr></thead>
+      <tbody id="r-body"></tbody>
+    </table></div>
+  </section>
+
+  <!-- EXCEPTIONS -->
+  <section id="view-exceptions" class="hidden">
+    <div class="toolbar">
+      <h2 style="margin:0 auto 0 0">Exceptions register</h2>
+      <select id="x-filter" style="max-width:200px"><option value="">All exceptions</option><option>Pending approval</option><option>Approved</option><option>Overdue</option><option>Rejected</option><option>Closed</option></select>
+    </div>
+    <p class="muted" style="margin-top:-4px">A documented deviation from policy, with a mitigating control and a deadline of at most 90 days. Raised from the case, approved by a senior analyst or the MLRO who did not raise it. An exception never unlocks a blocked case: incomplete CDD and open sanctions hits still block approval.</p>
+    <div id="x-msg"></div>
+    <div class="card" style="padding:4px 8px"><table>
+      <thead><tr><th>ID</th><th>Case</th><th>Type and description</th><th>Mitigation</th><th>Raised</th><th>Resolve by</th><th>Status</th><th></th></tr></thead>
+      <tbody id="x-body"></tbody>
+    </table></div>
+  </section>
+
+  <!-- QUALITY ASSURANCE -->
+  <section id="view-quality" class="hidden">
+    <h2>Quality assurance</h2>
+    <p class="muted" style="margin-top:-4px">Every High risk decision and 1 in 4 of the other decisions go to a QA check by a senior analyst or the MLRO who did not take the decision. Failed checks go back to the analyst and feed the error trends on the dashboard.</p>
+    <div class="grid kpis" id="qa-kpis" style="margin-bottom:14px"></div>
+    <div class="card" style="padding:4px 8px"><table>
+      <thead><tr><th>Case</th><th>Customer</th><th>Risk</th><th>Decision</th><th>Decided by</th><th>In sample</th><th>QA result</th></tr></thead>
+      <tbody id="qa-body"></tbody>
     </table></div>
   </section>
 
@@ -326,6 +389,10 @@
           <tr><td>Enhanced due diligence</td><td>High risk cases need EDD confirmation (source of wealth and funds) before approval.</td><td class="ref">s.39</td></tr>
           <tr><td>Sanctions screening</td><td>Jaro Winkler fuzzy matching on names and aliases. Strong match (0.92 or more, DOB consistent) blocks the case. Potential match (0.82 or more) requires analyst review.</td><td class="ref">EU sanctions regulations</td></tr>
           <tr><td>Suspicious activity</td><td>Escalation to the MLRO is an internal action only. No customer facing text is generated.</td><td class="ref">s.42, s.49 (tipping off)</td></tr>
+          <tr><td>Business verification</td><td>Companies, trusts and sole traders are checked on the official register (CRO or RBO in Ireland, Certidão Permanente in Portugal, CNPJ in Brazil). An unverified registration makes CDD incomplete.</td><td class="ref">s.33</td></tr>
+          <tr><td>Ongoing monitoring</td><td>Periodic reviews by risk tier (12, 24 or 36 months) and event driven reviews on material changes. Documents are re-checked on the review date and the case needs a new decision.</td><td class="ref">s.33, s.35(3)</td></tr>
+          <tr><td>Exceptions</td><td>Documented deviations with a mitigation and a deadline of at most 90 days, approved by a different senior person. They never override the fail closed rules.</td><td class="ref">s.54 (policies and controls)</td></tr>
+          <tr><td>Quality assurance</td><td>Risk based sample of decisions checked by an independent reviewer against a 6 point checklist. Pass rate and error types reported by analyst.</td><td class="ref">s.54, Central Bank AML Guidelines</td></tr>
           <tr><td>Record keeping</td><td>Append only audit trail on every case, included in the export.</td><td class="ref">s.55 (5 years)</td></tr>
           <tr><td>Access control</td><td>RBAC with attribute based rules: least privilege, segregation of duties, four eyes approval for PEP and high risk country cases, delegated authority granted by the MLRO, access log.</td><td class="ref">s.37, s.38A (senior approval), s.54 (internal controls)</td></tr>
           <tr><td>Human oversight</td><td>The engine recommends. A named analyst always records the final decision with a written rationale.</td><td class="ref">AMLR (from 2027)</td></tr>

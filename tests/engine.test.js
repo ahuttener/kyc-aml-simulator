@@ -158,4 +158,127 @@ test('metrics compute rates', function () {
   assert.strictEqual(m.avgHoursToDecision, 10);
 });
 
+// --- Ongoing CDD: periodic and event driven reviews -------------------------
+var NOW = '2026-11-08T10:00:00Z';
+function approved(nextReview, extra) { return Object.assign({ id: 'KYC-1001', status: 'Approved', nextReview: nextReview, assessment: { tier: 'Low' }, audit: [] }, extra || {}); }
+
+test('review state: overdue, due soon and scheduled', function () {
+  assert.strictEqual(K.reviewState(approved('2026-10-01T00:00:00Z'), NOW).state, 'Overdue');
+  assert.strictEqual(K.reviewState(approved('2026-11-20T00:00:00Z'), NOW).state, 'Due soon');
+  assert.strictEqual(K.reviewState(approved('2027-06-01T00:00:00Z'), NOW).state, 'Scheduled');
+  assert.strictEqual(K.reviewState(approved('2027-06-01T00:00:00Z', { openReview: { startedAt: '2026-11-06T10:00:00Z' } }), NOW).state, 'In progress');
+  assert.strictEqual(K.reviewState({ status: 'Rejected' }, NOW), null);
+});
+
+test('an ID that expired after onboarding makes CDD incomplete at review (s.33)', function () {
+  var c = base({ idExpiry: '2026-09-30', createdAt: '2026-01-10T10:00:00Z' });
+  assert.strictEqual(K.assess(c, [], lists).cddComplete, true);
+  c.reviewAsOf = '2026-11-08T10:00:00Z';
+  var a = K.assess(c, [], lists);
+  assert.strictEqual(a.cddComplete, false);
+  assert.strictEqual(K.recommend(a).code, 'CDD_INCOMPLETE');
+});
+
+test('IAM: the auditor cannot start a review, an analyst can', function () {
+  assert.ok(K.authorize('start_review', K.DEMO_USERS[4]));
+  assert.strictEqual(K.authorize('start_review', K.DEMO_USERS[0]), null);
+});
+
+// --- Exceptions register -----------------------------------------------------
+function exc(extra) { return Object.assign({ type: 'doc_renewal', description: 'Passport expired, renewal appointment booked.', mitigation: 'Outgoing payments capped at EUR 1,000.', expiresOn: '2026-12-08' }, extra || {}); }
+
+test('exceptions need a description, a mitigation and at most 90 days', function () {
+  assert.strictEqual(K.validateException(exc(), NOW), null);
+  assert.ok(K.validateException(exc({ mitigation: '' }), NOW));
+  assert.ok(K.validateException(exc({ expiresOn: '2027-03-01' }), NOW), 'more than 90 days must be refused');
+  assert.ok(K.validateException(exc({ expiresOn: '2026-11-01' }), NOW), 'a past date must be refused');
+});
+
+test('IAM: exceptions are approved by a senior, never by the person who raised them', function () {
+  var x = exc({ raisedById: 'u-senior' });
+  assert.ok(K.authorize('decide_exception', K.DEMO_USERS[1], null, { exception: x }), 'analyst cannot approve');
+  assert.ok(K.authorize('decide_exception', K.DEMO_USERS[2], null, { exception: x }), 'four eyes');
+  assert.strictEqual(K.authorize('decide_exception', K.DEMO_USERS[3], null, { exception: x }), null);
+});
+
+test('an approved exception past its date is overdue', function () {
+  assert.strictEqual(K.exceptionState(exc({ status: 'Approved', expiresOn: '2026-11-01' }), NOW), 'Overdue');
+  assert.strictEqual(K.exceptionState(exc({ status: 'Closed', expiresOn: '2026-11-01' }), NOW), 'Closed');
+});
+
+// --- Quality assurance -------------------------------------------------------
+test('QA sample includes every High risk decision and 1 in 4 of the rest', function () {
+  assert.strictEqual(K.qaSelected({ id: 'KYC-1001', status: 'Approved', assessment: { tier: 'High' } }), true);
+  assert.strictEqual(K.qaSelected({ id: 'KYC-1004', status: 'Approved', assessment: { tier: 'Low' } }), true);
+  assert.strictEqual(K.qaSelected({ id: 'KYC-1005', status: 'Approved', assessment: { tier: 'Low' } }), false);
+  assert.strictEqual(K.qaSelected({ id: 'KYC-1008', status: 'Pending review', assessment: { tier: 'High' } }), false);
+});
+
+test('IAM: QA is independent from the decision maker', function () {
+  assert.ok(K.authorize('qa_review', K.DEMO_USERS[1], null, {}), 'analysts do not QA');
+  assert.ok(K.authorize('qa_review', K.DEMO_USERS[2], null, { deciderId: 'u-senior' }), 'cannot QA own decision');
+  assert.strictEqual(K.authorize('qa_review', K.DEMO_USERS[2], null, { deciderId: 'u-analyst' }), null);
+});
+
+test('QA: every check answered, a failure needs a note and fails the case', function () {
+  var all = { id: 'pass', screening: 'pass', risk: 'pass', edd: 'na', authority: 'pass', rationale: 'pass' };
+  assert.strictEqual(K.validateQA(all, '', { assessment: { tier: 'Low' } }), null);
+  assert.ok(K.validateQA(all, '', { assessment: { tier: 'High' } }), 'EDD cannot be N/A on High risk');
+  var bad = Object.assign({}, all, { id: 'fail' });
+  assert.ok(K.validateQA(bad, 'short', { assessment: { tier: 'Low' } }));
+  assert.deepStrictEqual(K.scoreQA(bad), { outcome: 'Fail', failed: ['id'] });
+});
+
+test('operational metrics: reviews, exceptions, QA by analyst and SLA', function () {
+  var cases = [
+    approved('2026-10-01T00:00:00Z', { audit: [{ type: 'approve', userId: 'u-analyst', by: 'A. Huttener (Analyst)' }], qa: { outcome: 'Fail', failed: ['id'] } }),
+    approved('2026-11-20T00:00:00Z', { id: 'KYC-1004', audit: [{ type: 'approve', userId: 'u-analyst', by: 'A. Huttener (Analyst)' }], qa: { outcome: 'Pass', failed: [] } }),
+    { id: 'KYC-1010', status: 'Pending review', createdAt: '2026-11-04T10:00:00Z', assessment: { tier: 'Low' }, audit: [] }
+  ];
+  var exceptions = [exc({ status: 'Approved', expiresOn: '2026-11-01' }), exc({ status: 'Pending approval' }), exc({ status: 'Closed' })];
+  var m = K.opsMetrics(cases, exceptions, NOW);
+  assert.strictEqual(m.reviewsOverdue, 1);
+  assert.strictEqual(m.reviewsDueSoon, 1);
+  assert.strictEqual(m.exceptionsOpen, 2);
+  assert.strictEqual(m.exceptionsOverdue, 1);
+  assert.strictEqual(m.qaPassRate, 50);
+  assert.strictEqual(m.qaErrors.id, 1);
+  assert.strictEqual(m.byAnalyst[0].decisions, 2);
+  assert.strictEqual(m.byAnalyst[0].qaPassRate, 50);
+  assert.strictEqual(m.slaBreaches, 1);
+  assert.strictEqual(m.ageing['3 to 5 days'], 1);
+});
+
+test('IAM: four eyes also applies to whoever carried out a review', function () {
+  var c = { status: 'Pending review', createdById: 'u-analyst', openReview: { startedById: 'u-senior' }, assessment: { tier: 'High', mandatoryEDD: ['PEP'], sanctionsBlocked: false } };
+  assert.ok(K.authorize('approve', K.DEMO_USERS[2], c), 'the senior who did the review cannot approve it');
+  assert.strictEqual(K.authorize('approve', K.DEMO_USERS[3], c), null, 'another senior person can');
+});
+
+test('a review becomes overdue as soon as its date has passed', function () {
+  assert.strictEqual(K.reviewState(approved('2026-11-08T04:00:00Z'), NOW).state, 'Overdue');
+});
+
+test('impossible dates are refused for exceptions', function () {
+  assert.ok(K.validateException(exc({ expiresOn: '2026-11-31' }), NOW));
+});
+
+test('QA results moved to the history still count in the metrics', function () {
+  var c = approved('2027-06-01T00:00:00Z', { audit: [], qa: null, qaHistory: [{ outcome: 'Fail', failed: ['risk'], deciderId: 'u-analyst', decidedBy: 'A. Huttener (Analyst)' }] });
+  var m = K.opsMetrics([c], [], NOW);
+  assert.strictEqual(m.qaDone, 1);
+  assert.strictEqual(m.qaErrors.risk, 1);
+  assert.strictEqual(m.byAnalyst[0].qaPassRate, 0);
+});
+
+// --- Business verification -------------------------------------------------
+test('company registration not verified makes CDD incomplete; older cases are unaffected', function () {
+  var co = base({ name: 'Loja Exemplo, Lda', customerType: 'company', country: 'PT', ubos: [{ name: 'Ana Costa', dob: '1980-01-01', pct: '100' }] });
+  assert.strictEqual(K.assess(co, [], lists).cddComplete, true, 'no registry field captured');
+  co.registryVerified = false;
+  assert.strictEqual(K.assess(co, [], lists).cddComplete, false);
+  co.registryVerified = true;
+  assert.strictEqual(K.assess(co, [], lists).cddComplete, true);
+});
+
 console.log('\n' + passed + ' tests passed');

@@ -19,13 +19,18 @@
   function defaults() {
     return {
       cases: [], seq: 1000, users: K.DEMO_USERS.map(function (u) { return Object.assign({}, u); }), currentUserId: 'u-analyst', accessLog: [],
+      exceptions: [], exSeq: 0,
       lists: { sanctions: K.SAMPLE_SANCTIONS.slice(), peps: K.SAMPLE_PEPS.slice(), highRiskCountries: K.HIGH_RISK_THIRD_COUNTRIES.slice(), sanctionsSource: 'Fictional sample list' }
     };
   }
   function load() {
     try {
       var raw = window.localStorage.getItem(STORE_KEY);
-      if (raw) { var s = JSON.parse(raw); if (s && s.cases && s.lists && s.users) return s; }
+      if (raw) {
+        var s = JSON.parse(raw);
+        // Data saved by an older version has no exceptions register yet.
+        if (s && s.cases && s.lists && s.users) { s.exceptions = s.exceptions || []; s.exSeq = s.exSeq || 0; return s; }
+      }
     } catch (e) { /* storage unavailable */ }
     return defaults();
   }
@@ -51,6 +56,18 @@
   function addAudit(c, type, text, at) { c.audit.push({ at: at || new Date().toISOString(), by: userLabel(me()), userId: state.currentUserId, type: type, text: text }); }
   function logAccess(text, at) { state.accessLog.unshift({ at: at || new Date().toISOString(), user: userLabel(me()), text: text }); state.accessLog = state.accessLog.slice(0, 200); }
   function can(action, c, extra) { return K.authorize(action, me(), c, extra); }
+  function now() { return new Date().toISOString(); }
+  function nameOf(list, id) { var x = list.filter(function (i) { return i.id === id; })[0]; return x ? x.name : (id || ''); }
+  function addDays(iso, days) { var d = new Date(iso); d.setDate(d.getDate() + days); return d.toISOString(); }
+  var QA_SHORT = { id: 'ID and business', screening: 'Screening', risk: 'Risk rating', edd: 'EDD', authority: 'Authority', rationale: 'Rationale' };
+  function reviewBadge(rs) { return rs ? '<span class="badge r-' + rs.state.split(' ')[0] + '">' + esc(rs.state) + '</span>' : ''; }
+  function reviewWhen(rs) {
+    if (!rs) return '';
+    if (rs.state === 'In progress') return rs.days < 1 ? 'opened today' : 'open ' + rs.days + ' day' + (rs.days === 1 ? '' : 's');
+    return rs.days < 0 ? Math.abs(rs.days) + ' days overdue' : 'in ' + rs.days + ' days';
+  }
+  function exBadge(st) { return '<span class="badge x-' + st.split(' ')[0] + '">' + esc(st) + '</span>'; }
+  function qaBadge(o) { return '<span class="badge q-' + o + '">QA ' + esc(o) + '</span>'; }
 
   // ---------------------------------------------------------------------------
   // Case lifecycle
@@ -92,11 +109,19 @@
     if (opts.eddCompleted) text += ' EDD completed.';
     if (decision === 'approve' && c.assessment.mandatoryEDD.length) text += ' Senior management approval given by ' + userLabel(me()) + ' (four eyes: case prepared by ' + (c.createdBy || 'another user') + ').';
     if (decision === 'approve' || decision === 'reject') {
-      c.decidedAt = at;
+      if (!c.decidedAt) c.decidedAt = at; // first decision: feeds the time to onboard metric
+      c.decidedById = state.currentUserId;
       if (decision === 'approve') {
         var d = new Date(at); d.setMonth(d.getMonth() + c.assessment.reviewMonths);
         c.nextReview = d.toISOString();
         text += ' Next periodic review: ' + fmtDate(c.nextReview) + '.';
+      } else {
+        c.nextReview = null;
+      }
+      if (c.openReview) {
+        c.reviews = (c.reviews || []).concat([Object.assign({}, c.openReview, { completedAt: at, by: userLabel(me()), outcome: decision === 'approve' ? 'Relationship continued' : 'Relationship exited' })]);
+        text += decision === 'approve' ? ' Review completed: relationship continued.' : ' Review completed: relationship exited.';
+        c.openReview = null;
       }
     }
     if (decision === 'escalate') text += ' Internal escalation only: customer not informed (s.49 tipping off).';
@@ -104,7 +129,7 @@
     return null;
   }
 
-  function rescreen(c) {
+  function rescreen(c, at) {
     var old = c.hits || [];
     c.hits = K.screenCase(c, state.lists);
     c.hits.forEach(function (h) {
@@ -112,7 +137,107 @@
       if (prev) h.review = prev.review;
     });
     recompute(c);
-    addAudit(c, 'screen', 'Re-screened against current lists: ' + c.hits.length + ' hit(s). Risk score ' + c.assessment.score + ', tier ' + c.assessment.tier + '.');
+    addAudit(c, 'screen', 'Re-screened against current lists: ' + c.hits.length + ' hit(s). Risk score ' + c.assessment.score + ', tier ' + c.assessment.tier + '.' +
+      (c.assessment.cddComplete ? '' : ' CDD incomplete: ' + c.assessment.cddIssues.join('; ') + '.'), at);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Ongoing CDD: periodic and event driven reviews
+  // ---------------------------------------------------------------------------
+  function startReview(c, trigger, note, at) {
+    var denied = can('start_review', c); if (denied) return denied;
+    if (c.status !== 'Approved') return 'Only an active (approved) relationship can be reviewed.';
+    if (trigger !== 'periodic' && (!note || note.trim().length < 10)) return 'Describe what changed (at least 10 characters).';
+    at = at || now();
+    c.openReview = { trigger: trigger, note: (note || '').trim(), startedAt: at, startedBy: userLabel(me()), startedById: state.currentUserId };
+    c.reviewAsOf = at;
+    c.status = 'Pending review';
+    if (c.qa) { c.qaHistory = (c.qaHistory || []).concat([c.qa]); c.qa = null; }
+    addAudit(c, 'review', 'Started ' + (trigger === 'periodic' ? 'periodic review' : 'event driven review: ' + nameOf(K.REVIEW_TRIGGERS, trigger)) + (note ? '. ' + sentence(note) : '') + '. Documents are checked against the review date.', at);
+    rescreen(c, at);
+    return null;
+  }
+
+  var REVIEW_FIELDS = [['monthlyVolume', 'Expected monthly volume (EUR)'], ['sourceOfFunds', 'Source of funds'], ['country', 'Country'], ['idExpiry', 'ID document expiry'],
+    ['idVerified', 'Identity verified'], ['adverseMedia', 'Adverse media'], ['pepDeclared', 'PEP declared']];
+  function sentence(t) { return String(t || '').trim().replace(/[.\s]+$/, ''); }
+  function fmtVal(v) { return v === true ? 'yes' : v === false ? 'no' : (v === '' || v == null) ? 'none' : String(v); }
+
+  function updateDuringReview(c, ch, at) {
+    if (!c.openReview) return 'Start a review before changing customer data.';
+    var denied = can('start_review', c); if (denied) return denied;
+    var changes = [];
+    REVIEW_FIELDS.forEach(function (f) {
+      var k = f[0]; if (!(k in ch)) return;
+      var before = c[k], after = k === 'monthlyVolume' ? (Number(ch[k]) || 0) : ch[k];
+      if (fmtVal(before) === fmtVal(after)) return;
+      changes.push(f[1] + ': ' + fmtVal(k === 'country' ? countryName(before) : before) + ' to ' + fmtVal(k === 'country' ? countryName(after) : after));
+      c[k] = after;
+    });
+    if (ch.newUbo && ch.newUbo.name) {
+      c.ubos = (c.ubos || []).concat([ch.newUbo]);
+      changes.push('beneficial owner added: ' + ch.newUbo.name + (ch.newUbo.pct ? ' (' + ch.newUbo.pct + '%)' : ''));
+    }
+    if (!changes.length) return 'Nothing changed.';
+    addAudit(c, 'update', 'Customer data updated during the review. ' + changes.join('; ') + '.', at);
+    rescreen(c, at);
+    return null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Exceptions register
+  // ---------------------------------------------------------------------------
+  function getException(id) { return state.exceptions.filter(function (x) { return x.id === id; })[0]; }
+
+  function raiseException(c, x, at) {
+    var denied = can('raise_exception', c); if (denied) return denied;
+    at = at || now();
+    var err = K.validateException(x, at); if (err) return err;
+    state.exSeq += 1;
+    var e = { id: 'EX-' + (state.exSeq < 100 ? ('00' + state.exSeq).slice(-3) : String(state.exSeq)), caseId: c.id, customer: c.name, type: x.type, description: x.description.trim(), mitigation: x.mitigation.trim(),
+      expiresOn: x.expiresOn, status: 'Pending approval', raisedAt: at, raisedBy: userLabel(me()), raisedById: state.currentUserId };
+    state.exceptions.unshift(e);
+    addAudit(c, 'exception', 'Exception ' + e.id + ' raised (' + nameOf(K.EXCEPTION_TYPES, e.type) + '): ' + e.description + ' Mitigation: ' + e.mitigation + ' Resolve by ' + e.expiresOn + '.', at);
+    return null;
+  }
+
+  function decideException(e, approve, note, at) {
+    var denied = can('decide_exception', null, { exception: e }); if (denied) return denied;
+    if (e.status !== 'Pending approval') return 'This exception has already been decided.';
+    if (!note || note.trim().length < 10) return 'Record the reason for the decision (at least 10 characters).';
+    at = at || now();
+    e.status = approve ? 'Approved' : 'Rejected'; e.decidedAt = at; e.decidedBy = userLabel(me()); e.decisionNote = note.trim();
+    var c = getCase(e.caseId);
+    if (c) addAudit(c, 'exception', 'Exception ' + e.id + (approve ? ' approved' : ' rejected') + ' (four eyes, raised by ' + e.raisedBy + '). ' + note.trim(), at);
+    return null;
+  }
+
+  function closeException(e, note, at) {
+    var denied = can('close_exception', null, { exception: e }); if (denied) return denied;
+    if (e.status !== 'Approved') return 'Only an approved exception can be closed.';
+    if (!note || note.trim().length < 10) return 'Record how it was resolved (at least 10 characters).';
+    at = at || now();
+    e.status = 'Closed'; e.closedAt = at; e.closedBy = userLabel(me()); e.closeNote = note.trim();
+    var c = getCase(e.caseId);
+    if (c) addAudit(c, 'exception', 'Exception ' + e.id + ' closed as resolved. ' + note.trim(), at);
+    return null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Quality assurance
+  // ---------------------------------------------------------------------------
+  function submitQA(c, results, note, at) {
+    var d = K.decider(c);
+    if (!d || !d.id) return 'The person who decided this case is not recorded, so independence cannot be checked.';
+    var denied = can('qa_review', c, { deciderId: d.id }); if (denied) return denied;
+    if (c.status !== 'Approved' && c.status !== 'Rejected') return 'Only decided cases can be quality checked.';
+    if (c.qa) return 'This decision already has a QA result.';
+    var err = K.validateQA(results, note, c); if (err) return err;
+    at = at || now();
+    var s = K.scoreQA(results);
+    c.qa = { outcome: s.outcome, failed: s.failed, results: results, note: (note || '').trim(), by: userLabel(me()), byId: state.currentUserId, at: at, decidedBy: d.label, deciderId: d.id };
+    addAudit(c, 'qa', 'Quality check ' + s.outcome.toUpperCase() + (s.failed.length ? ' on: ' + s.failed.map(function (f) { return QA_SHORT[f]; }).join(', ') : '') + (note && note.trim() ? '. ' + sentence(note) : '') + '.', at);
+    return null;
   }
 
   // ---------------------------------------------------------------------------
@@ -127,6 +252,9 @@
     if (view === 'lists') renderLists();
     if (view === 'new') renderPreview();
     if (view === 'access') renderAccess();
+    if (view === 'reviews') renderReviews();
+    if (view === 'exceptions') renderExceptions();
+    if (view === 'quality') renderQuality();
     // Keep the tabs in view instead of jumping to the banner at the top of the page.
     var tabs = document.querySelector('.appbar'), site = document.querySelector('.sitebar');
     if (tabs) {
@@ -158,13 +286,31 @@
       ['False positive rate', m.falsePositiveRate + '%', m.falsePositives + ' of ' + m.reviewedHits + ' reviewed hits'],
       ['Avg time to decision', m.avgHoursToDecision + ' h', 'creation to approve or reject']
     ];
-    $('#kpis').innerHTML = kpis.map(function (k) { return '<div class="card kpi"><div class="label">' + k[0] + '</div><div class="value">' + k[1] + '</div><div class="hint">' + k[2] + '</div></div>'; }).join('');
+    $('#kpis').innerHTML = kpiHtml(kpis);
     var sc = { 'Pending review': '#2563eb', 'Info requested': '#8892a0', 'Escalated': '#9333ea', 'Approved': '#16a34a', 'Rejected': '#dc2626' };
     bars($('#chart-status'), STATUSES.map(function (s) { return [s, m.byStatus[s] || 0]; }), function (k) { return sc[k]; });
     var tc = { Low: '#16a34a', Medium: '#d97706', High: '#dc2626' };
     bars($('#chart-tier'), ['Low', 'Medium', 'High'].map(function (t) { return [t, m.byTier[t]]; }), function (k) { return tc[k]; });
     bars($('#chart-hits'), [['Sanctions hits', m.sanctionsHits], ['PEP hits', m.pepHits], ['True matches', m.trueMatches], ['False positives', m.falsePositives]], function () { return '#22d3ee'; });
     bars($('#chart-controls'), [['CDD incomplete', m.cddIncomplete], ['EDD applied', m.eddCases], ['Escalated', m.escalated], ['Rejected', m.byStatus.Rejected]], function () { return '#06b6d4'; });
+
+    var o = K.opsMetrics(state.cases, state.exceptions, now());
+    $('#kpis2').innerHTML = kpiHtml([
+      ['Reviews overdue', o.reviewsOverdue, o.reviewsDueSoon + ' due in the next ' + K.REVIEW_DUE_SOON_DAYS + ' days'],
+      ['Reviews in progress', o.reviewsInProgress, o.reviewsCompleted + ' completed'],
+      ['Open exceptions', o.exceptionsOpen, o.exceptionsOverdue + ' overdue, ' + o.exceptionsPending + ' awaiting approval'],
+      ['QA pass rate', o.qaDone ? o.qaPassRate + '%' : 'n/a', o.qaDone + ' checked, ' + o.qaSampled + ' in the sample'],
+      ['Over SLA (' + K.SLA_HOURS + ' h)', o.slaBreaches, 'of ' + o.openCases + ' open cases']
+    ]);
+    bars($('#chart-ageing'), Object.keys(o.ageing).map(function (k) { return [k, o.ageing[k]]; }), function (k) { return k === 'Over 5 days' ? '#dc2626' : k === '3 to 5 days' ? '#d97706' : '#22d3ee'; });
+    bars($('#chart-qa'), K.QA_CHECKS.map(function (q) { return [QA_SHORT[q.id], o.qaErrors[q.id] || 0]; }), function () { return '#dc2626'; });
+    $('#analyst-body').innerHTML = o.byAnalyst.length ? o.byAnalyst.map(function (a) {
+      return '<tr><td>' + esc(a.name) + '</td><td>' + a.decisions + '</td><td>' + a.qaDone + '</td><td>' + (a.qaPassRate == null ? '<span class="muted">n/a</span>' : '<strong>' + a.qaPassRate + '%</strong>') + '</td></tr>';
+    }).join('') : '<tr><td colspan="4" class="muted">No decisions yet.</td></tr>';
+  }
+
+  function kpiHtml(list) {
+    return list.map(function (k) { return '<div class="card kpi"><div class="label">' + k[0] + '</div><div class="value">' + k[1] + '</div><div class="hint">' + k[2] + '</div></div>'; }).join('');
   }
 
   $('#btn-demo').addEventListener('click', function () { seedDemo(); save(); renderDashboard(); $('#dash-msg').textContent = 'Demo cases loaded.'; });
@@ -187,9 +333,13 @@
   $('#btn-export').addEventListener('click', exportCSV);
 
   function exportCSV() {
-    var head = ['case_id', 'created_at', 'customer', 'type', 'country', 'sector', 'risk_score', 'risk_tier', 'edd_required', 'cdd_complete', 'hits', 'status', 'decided_at', 'next_review', 'audit_trail'];
+    var head = ['case_id', 'created_at', 'customer', 'type', 'country', 'sector', 'risk_score', 'risk_tier', 'edd_required', 'cdd_complete', 'hits', 'status', 'decided_at', 'next_review', 'review_state', 'open_exceptions', 'qa_result', 'audit_trail'];
+    var t = now();
     var rows = state.cases.map(function (c) {
+      var rs = K.reviewState(c, t);
+      var openEx = state.exceptions.filter(function (x) { return x.caseId === c.id && ['Pending approval', 'Approved', 'Overdue'].indexOf(K.exceptionState(x, t)) !== -1; }).length;
       return [c.id, c.createdAt, c.name, typeName(c.customerType), countryName(c.country), c.sector, c.assessment.score, c.assessment.tier, c.assessment.eddRequired, c.assessment.cddComplete, c.hits.length, c.status, c.decidedAt || '', c.nextReview || '',
+        rs ? rs.state : '', openEx, c.qa ? c.qa.outcome : '',
         c.audit.map(function (a) { return a.at + ' [' + a.by + '] ' + a.text; }).join(' | ')];
     });
     var csv = [head].concat(rows).map(function (r) { return r.map(function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; }).join(','); }).join('\n');
@@ -222,6 +372,8 @@
   $('#f-type').innerHTML = K.CUSTOMER_TYPES.map(function (t) { return '<option value="' + t.id + '">' + t.name + '</option>'; }).join('');
   $('#f-country').innerHTML = K.COUNTRIES.slice().sort(function (a, b) { return a.name.localeCompare(b.name); }).map(function (c) { return '<option value="' + c.code + '"' + (c.code === 'IE' ? ' selected' : '') + '>' + c.name + '</option>'; }).join('');
   $('#f-sector').innerHTML = K.SECTORS.map(function (s) { return '<option value="' + s.id + '">' + s.name + (s.highRisk ? ' (higher risk)' : '') + '</option>'; }).join('');
+  $('#f-iddoc').innerHTML = K.ID_DOC_TYPES.map(function (d) { return '<option value="' + d.id + '">' + esc(d.name) + '</option>'; }).join('');
+  $('#f-registry').innerHTML = K.REGISTRIES.map(function (r) { return '<option value="' + r.id + '">' + esc(r.name) + '</option>'; }).join('');
 
   function addUboRow(u) {
     u = u || {};
@@ -239,9 +391,11 @@
   function readForm() {
     var f = form.elements;
     var corp = f.customerType.value === 'company' || f.customerType.value === 'trust';
+    var biz = f.customerType.value !== 'individual';
     return {
       name: f.name.value.trim(), customerType: f.customerType.value, country: f.country.value, dob: f.dob.value,
-      sector: f.sector.value, idExpiry: f.idExpiry.value, idVerified: f.idVerified.checked,
+      sector: f.sector.value, idDocType: f.idDocType.value, idExpiry: f.idExpiry.value, idVerified: f.idVerified.checked,
+      registry: biz ? f.registry.value : undefined, registryNumber: biz ? f.registryNumber.value.trim() : undefined, registryVerified: biz ? f.registryVerified.checked : undefined,
       monthlyVolume: Number(f.monthlyVolume.value) || 0, sourceOfFunds: f.sourceOfFunds.value.trim(),
       pepDeclared: f.pepDeclared.checked, adverseMedia: f.adverseMedia.checked,
       ubos: corp ? $all('#ubo-rows .ubo').map(function (r) { return { name: r.querySelector('.u-name').value.trim(), dob: r.querySelector('.u-dob').value, pct: r.querySelector('.u-pct').value }; }).filter(function (u) { return u.name; }) : [],
@@ -252,6 +406,7 @@
   function syncFormType() {
     var corp = form.elements.customerType.value === 'company' || form.elements.customerType.value === 'trust';
     $('#ubo-block').classList.toggle('hidden', !corp);
+    $('#biz-block').classList.toggle('hidden', form.elements.customerType.value === 'individual');
     $('#lbl-dob').textContent = corp ? 'Date of incorporation' : 'Date of birth';
     if (corp && !$all('#ubo-rows .ubo').length) addUboRow();
   }
@@ -358,19 +513,24 @@
     el.innerHTML =
       '<span class="back" id="back">&larr; Back to queue</span>' +
       '<div class="toolbar"><h2 style="margin:0">' + c.id + ': ' + esc(c.name) + '</h2>' + statusBadge(c.status) + tierBadge(a.tier) + '<span style="margin-left:auto"></span>' + (closed ? '' : '<button class="btn ghost small" id="rescreen">Re-screen against current lists</button>') + '</div>' +
+      (c.openReview ? '<div class="rec"><strong>' + (c.openReview.trigger === 'periodic' ? 'Periodic review' : 'Event driven review: ' + esc(nameOf(K.REVIEW_TRIGGERS, c.openReview.trigger))) + '</strong> started ' + fmtDate(c.openReview.startedAt) + ' by ' + esc(c.openReview.startedBy) + (c.openReview.note ? '. ' + esc(sentence(c.openReview.note)) : '') + '. The case needs a new decision to keep the relationship.</div>' : '') +
       '<div class="rec ' + rec.code + '"><strong>Recommendation:</strong> ' + esc(rec.text) + '</div>' +
       '<div class="grid two">' +
         '<div class="card"><h3>Customer profile</h3>' +
           '<p>' + typeName(c.customerType) + ' · ' + esc(countryName(c.country)) + ' · ' + esc((K.SECTORS.filter(function (s) { return s.id === c.sector; })[0] || {}).name || '') + '</p>' +
           '<p class="muted">' + (c.dob ? ((c.customerType === 'company' || c.customerType === 'trust') ? 'Incorporated: ' : 'Date of birth: ') + esc(c.dob) + ' · ' : '') + 'Monthly volume: EUR ' + Number(c.monthlyVolume || 0).toLocaleString('en-IE') + ' · Source of funds: ' + esc(c.sourceOfFunds || 'not provided') + '</p>' + ubos +
-          '<p>Identity verified: <strong>' + (c.idVerified ? 'Yes' : 'No') + '</strong>' + (c.idExpiry ? ' · ID expiry ' + esc(c.idExpiry) : '') + ' · PEP declared: <strong>' + (c.pepDeclared ? 'Yes' : 'No') + '</strong></p>' +
+          '<p>Identity verified: <strong>' + (c.idVerified ? 'Yes' : 'No') + '</strong>' + (c.idDocType ? ' · ' + esc(nameOf(K.ID_DOC_TYPES, c.idDocType)) : '') + (c.idExpiry ? ' · ID expiry ' + esc(c.idExpiry) : '') + ' · PEP declared: <strong>' + (c.pepDeclared ? 'Yes' : 'No') + '</strong></p>' +
+          (c.registry ? '<p>Register: ' + esc(nameOf(K.REGISTRIES, c.registry)) + (c.registryNumber ? ' · <code>' + esc(c.registryNumber) + '</code>' : '') + ' · <strong>' + (c.registryVerified ? 'checked' : 'not checked') + '</strong></p>' : '') +
           (a.cddIssues.length ? '<p class="err">CDD incomplete:<br>' + a.cddIssues.map(esc).join('<br>') + '</p>' : '<p class="ok">CDD complete</p>') +
           (a.mandatoryEDD.length ? '<p class="err">Mandatory EDD:<br>' + a.mandatoryEDD.map(esc).join('<br>') + '</p>' : '') +
         '</div>' +
         '<div class="card"><h3>Risk assessment</h3><div style="display:flex;align-items:center;gap:12px;margin-bottom:6px"><span class="score">' + a.score + '</span>' + tierBadge(a.tier) + '<span class="muted">Review every ' + a.reviewMonths + ' months</span></div>' + factorTable(a) + '</div>' +
         '<div class="card"><h3>Sanctions and PEP screening</h3>' + hitsHtml + '</div>' +
         '<div class="card"><h3>Decision</h3>' + decisionHtml + '</div>' +
+        '<div class="card"><h3>Ongoing CDD</h3>' + ongoingHtml(c) + '</div>' +
+        '<div class="card"><h3>Exceptions</h3>' + caseExceptionsHtml(c) + '</div>' +
       '</div>' +
+      (closed || c.qa || (c.qaHistory || []).length ? '<div class="card" style="margin-top:14px"><h3>Quality assurance</h3>' + qaHtml(c) + '</div>' : '') +
       '<div class="card" style="margin-top:14px"><h3>Audit trail (append only, retained 5 years under s.55)</h3><ol class="audit">' +
         c.audit.slice().reverse().map(function (e) { return '<li><time>' + fmtTime(e.at) + '</time><strong>' + esc(e.by) + ':</strong> ' + esc(e.text) + '</li>'; }).join('') +
       '</ol></div>';
@@ -396,6 +556,202 @@
         save(); renderCase();
       });
     });
+    bindCaseExtras(c, el);
+  }
+
+  // Case detail: ongoing CDD card
+  function ongoingHtml(c) {
+    var rs = K.reviewState(c, now());
+    var ro = me().role === 'auditor';
+    var hist = (c.reviews || []).length ? '<h3 style="margin-top:14px;font-size:13.5px">Review history</h3><ol class="audit">' + c.reviews.slice().reverse().map(function (r) {
+      return '<li><time>' + fmtDate(r.completedAt) + '</time>' + esc(r.trigger === 'periodic' ? 'Periodic review' : nameOf(K.REVIEW_TRIGGERS, r.trigger)) + ': <strong>' + esc(r.outcome) + '</strong> <span class="muted">(' + esc(r.by) + ')</span></li>';
+    }).join('') + '</ol>' : '';
+    if (c.openReview) {
+      if (ro) return '<p>' + reviewBadge(rs) + ' ' + reviewWhen(rs) + '</p><p class="muted">Read only access.</p>' + hist;
+      var countries = K.COUNTRIES.slice().sort(function (a, b) { return a.name.localeCompare(b.name); }).map(function (x) { return '<option value="' + x.code + '"' + (x.code === c.country ? ' selected' : '') + '>' + esc(x.name) + '</option>'; }).join('');
+      return '<p>' + reviewBadge(rs) + ' ' + reviewWhen(rs) + '. Update what changed, then decide the case again.</p>' +
+        '<div class="row"><div class="field"><label>Expected monthly volume (EUR)</label><input type="number" id="rv-monthlyVolume" min="0" step="1000" value="' + esc(c.monthlyVolume || 0) + '"></div>' +
+        '<div class="field"><label>Source of funds</label><input type="text" id="rv-sourceOfFunds" value="' + esc(c.sourceOfFunds || '') + '"></div></div>' +
+        '<div class="row"><div class="field"><label>Country</label><select id="rv-country">' + countries + '</select></div>' +
+        '<div class="field"><label>ID document expiry</label><input type="date" id="rv-idExpiry" value="' + esc(c.idExpiry || '') + '"></div></div>' +
+        '<label class="check"><input type="checkbox" id="rv-idVerified"' + (c.idVerified ? ' checked' : '') + '> Identity verified against a reliable, independent source</label>' +
+        '<label class="check"><input type="checkbox" id="rv-pepDeclared"' + (c.pepDeclared ? ' checked' : '') + '> Customer or a beneficial owner is a PEP</label>' +
+        '<label class="check"><input type="checkbox" id="rv-adverseMedia"' + (c.adverseMedia ? ' checked' : '') + '> Adverse media linked to financial crime</label>' +
+        (c.customerType === 'company' || c.customerType === 'trust' ? '<div class="field" style="margin-top:8px"><label>New beneficial owner (optional)</label><div class="ubo" style="grid-template-columns:2fr 1.2fr .8fr"><input type="text" id="rv-ubo-name" placeholder="Name"><input type="date" id="rv-ubo-dob"><input type="number" id="rv-ubo-pct" placeholder="%" min="0" max="100"></div></div>' : '') +
+        '<div class="toolbar" style="margin:8px 0 0"><button class="btn ghost" id="rv-save">Save changes and re-screen</button></div><div id="rv-msg"></div>' + hist;
+    }
+    if (c.status === 'Approved') {
+      var start = ro ? '<p class="muted">Read only access.</p>' :
+        '<div class="field"><label>Start a review</label><select id="rv-trigger">' + K.REVIEW_TRIGGERS.map(function (t) { return '<option value="' + t.id + '">' + esc(t.name) + '</option>'; }).join('') + '</select></div>' +
+        '<div class="field"><input type="text" id="rv-note" placeholder="What changed? (required for event driven reviews)"></div>' +
+        '<div class="toolbar" style="margin:0"><button class="btn ghost" id="rv-start">Start review</button></div><div id="rv-msg"></div>';
+      return '<p>' + reviewBadge(rs) + ' Next periodic review <strong>' + fmtDate(c.nextReview) + '</strong> (' + reviewWhen(rs) + ').</p>' + start + hist;
+    }
+    if (c.status === 'Rejected') return '<p class="muted">No active relationship, so no reviews.</p>' + hist;
+    return '<p class="muted">Reviews start once the relationship is approved. The first periodic review is set by the risk tier: every ' + c.assessment.reviewMonths + ' months for this case.</p>' + hist;
+  }
+
+  // Case detail: exceptions card
+  function caseExceptionsHtml(c) {
+    var t = now();
+    var list = state.exceptions.filter(function (x) { return x.caseId === c.id; });
+    var rows = list.length ? '<table><tbody>' + list.map(function (x) {
+      return '<tr><td><strong>' + esc(x.id) + '</strong><br><span class="muted">' + esc(nameOf(K.EXCEPTION_TYPES, x.type)) + '</span></td><td>' + esc(x.description) + '<div class="muted">Mitigation: ' + esc(x.mitigation) + '</div></td><td>' + exBadge(K.exceptionState(x, t)) + '<div class="muted">by ' + esc(x.expiresOn) + '</div></td></tr>';
+    }).join('') + '</tbody></table>' : '<p class="muted">No exceptions on this case.</p>';
+    if (me().role === 'auditor') return rows;
+    var def = addDays(t, 30).slice(0, 10);
+    return rows + '<h3 style="margin-top:14px;font-size:13.5px">Raise an exception</h3>' +
+      '<div class="field"><select id="ex-type">' + K.EXCEPTION_TYPES.map(function (x) { return '<option value="' + x.id + '">' + esc(x.name) + '</option>'; }).join('') + '</select></div>' +
+      '<div class="field"><textarea id="ex-desc" placeholder="What deviates from policy and why" style="min-height:56px"></textarea></div>' +
+      '<div class="row"><div class="field"><input type="text" id="ex-mit" placeholder="Mitigating control, e.g. payouts capped"></div>' +
+      '<div class="field"><input type="date" id="ex-exp" value="' + def + '" title="Resolve by (at most ' + K.EXCEPTION_MAX_DAYS + ' days)"></div></div>' +
+      '<div class="toolbar" style="margin:0"><button class="btn ghost" id="ex-raise">Raise for approval</button></div><div id="ex-msg"></div>';
+  }
+
+  // Case detail: quality assurance card
+  function qaHtml(c) {
+    var d = K.decider(c);
+    var hist = (c.qaHistory || []).length ? '<p class="muted" style="font-size:12.5px">Earlier QA results: ' + c.qaHistory.map(function (q) { return q.outcome + ' (' + esc(q.by) + ', ' + fmtDate(q.at) + ')'; }).join('; ') + '</p>' : '';
+    if (c.qa) {
+      return '<p>' + qaBadge(c.qa.outcome) + ' Checked by <strong>' + esc(c.qa.by) + '</strong> on ' + fmtDate(c.qa.at) + '. Decision taken by ' + esc(c.qa.decidedBy || 'unknown') + '.</p>' +
+        '<table><tbody>' + K.QA_CHECKS.map(function (q) { var v = c.qa.results[q.id]; return '<tr><td>' + esc(q.name) + '</td><td style="text-align:right">' + (v === 'fail' ? '<strong style="color:#f87171">Fail</strong>' : v === 'pass' ? '<span style="color:#4ade80">Pass</span>' : '<span class="muted">N/A</span>') + '</td></tr>'; }).join('') + '</tbody></table>' +
+        (c.qa.note ? '<p class="muted">' + esc(c.qa.note) + '</p>' : '') + hist;
+    }
+    if (c.status !== 'Approved' && c.status !== 'Rejected') return hist || '<p class="muted">QA happens after the decision.</p>';
+    var head = '<p>' + (K.qaSelected(c) ? '<span class="badge s-Pending">In the QA sample</span> ' : '<span class="muted">Not in the routine sample (ad hoc checks are allowed).</span> ') + 'Decision taken by <strong>' + esc(d ? d.label : 'unknown') + '</strong>.</p>';
+    var denied = can('qa_review', c, { deciderId: d && d.id });
+    if (denied) return head + '<p class="muted">' + esc(denied) + '</p>' + hist;
+    return head + '<table><tbody>' + K.QA_CHECKS.map(function (q) {
+      return '<tr><td>' + esc(q.name) + '</td><td style="width:130px"><select class="qa-sel" data-q="' + q.id + '"><option value="">Choose</option><option value="pass">Pass</option><option value="fail">Fail</option><option value="na">N/A</option></select></td></tr>';
+    }).join('') + '</tbody></table>' +
+      '<div class="field" style="margin-top:10px"><textarea id="qa-note" placeholder="Findings for the analyst (required when a check fails)" style="min-height:56px"></textarea></div>' +
+      '<div class="toolbar" style="margin:0"><button class="btn" id="qa-submit">Record QA result</button></div><div id="qa-msg"></div>' + hist;
+  }
+
+  function bindCaseExtras(c, el) {
+    function msg(id, err) { $(id).innerHTML = err ? '<div class="err">' + esc(err) + '</div>' : ''; }
+    var st = $('#rv-start', el);
+    if (st) st.addEventListener('click', function () {
+      var err = startReview(c, $('#rv-trigger').value, $('#rv-note').value);
+      if (err) return msg('#rv-msg', err);
+      save(); renderCase();
+    });
+    var sv = $('#rv-save', el);
+    if (sv) sv.addEventListener('click', function () {
+      var ch = {};
+      ['monthlyVolume', 'sourceOfFunds', 'country', 'idExpiry'].forEach(function (k) { ch[k] = $('#rv-' + k).value.trim(); });
+      ['idVerified', 'pepDeclared', 'adverseMedia'].forEach(function (k) { ch[k] = $('#rv-' + k).checked; });
+      var un = $('#rv-ubo-name');
+      if (un && un.value.trim()) ch.newUbo = { name: un.value.trim(), dob: $('#rv-ubo-dob').value, pct: $('#rv-ubo-pct').value };
+      var err = updateDuringReview(c, ch);
+      if (err) return msg('#rv-msg', err);
+      save(); renderCase();
+    });
+    var rx = $('#ex-raise', el);
+    if (rx) rx.addEventListener('click', function () {
+      var err = raiseException(c, { type: $('#ex-type').value, description: $('#ex-desc').value, mitigation: $('#ex-mit').value, expiresOn: $('#ex-exp').value });
+      if (err) return msg('#ex-msg', err);
+      save(); renderCase();
+    });
+    var qs = $('#qa-submit', el);
+    if (qs) qs.addEventListener('click', function () {
+      var results = {};
+      $all('.qa-sel', el).forEach(function (s) { results[s.getAttribute('data-q')] = s.value; });
+      var err = submitQA(c, results, $('#qa-note').value);
+      if (err) return msg('#qa-msg', err);
+      save(); renderCase();
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Reviews, exceptions and quality views
+  // ---------------------------------------------------------------------------
+  var REVIEW_ORDER = { 'Overdue': 0, 'In progress': 1, 'Due soon': 2, 'Scheduled': 3 };
+  $('#r-filter').addEventListener('input', renderReviews);
+
+  function renderReviews() {
+    var t = now(), f = $('#r-filter').value;
+    var all = state.cases.map(function (c) { return { c: c, rs: K.reviewState(c, t) }; }).filter(function (x) { return x.rs; });
+    var count = function (s) { return all.filter(function (x) { return x.rs.state === s; }).length; };
+    $('#r-kpis').innerHTML = kpiHtml([
+      ['Overdue', count('Overdue'), 'past the review date'],
+      ['Due soon', count('Due soon'), 'in the next ' + K.REVIEW_DUE_SOON_DAYS + ' days'],
+      ['In progress', count('In progress'), 'periodic or event driven'],
+      ['Completed', state.cases.reduce(function (n, c) { return n + (c.reviews || []).length; }, 0), 'reviews closed with a decision']
+    ]);
+    var rows = all.filter(function (x) { return !f || x.rs.state === f; }).sort(function (a, b) { return (REVIEW_ORDER[a.rs.state] - REVIEW_ORDER[b.rs.state]) || (a.rs.days - b.rs.days); });
+    var ro = me().role === 'auditor';
+    $('#r-body').innerHTML = rows.length ? rows.map(function (x) {
+      var c = x.c, last = (c.reviews || []).slice(-1)[0];
+      var action = x.rs.state === 'In progress' ? '<button class="btn ghost small r-open" data-id="' + c.id + '">Open</button>' :
+        (ro ? '' : '<button class="btn ghost small r-start" data-id="' + c.id + '">Start periodic review</button>');
+      return '<tr><td><strong class="click r-open" data-id="' + c.id + '" style="cursor:pointer">' + c.id + '</strong></td><td>' + esc(c.name) + '</td><td>' + tierBadge(c.assessment.tier) + '</td><td>' + reviewBadge(x.rs) + '<div class="muted">' + reviewWhen(x.rs) + '</div></td><td>' + (c.nextReview ? fmtDate(c.nextReview) : '') + '</td><td>' + (last ? fmtDate(last.completedAt) + '<div class="muted">' + esc(last.outcome) + '</div>' : '<span class="muted">Onboarded ' + fmtDate(c.decidedAt) + '</span>') + '</td><td>' + action + '</td></tr>';
+    }).join('') : '<tr><td colspan="7" class="muted">No active relationships. Approve a case or load the demo cases.</td></tr>';
+    $all('#r-body .r-open').forEach(function (b) { b.addEventListener('click', function () { openCase(b.getAttribute('data-id')); }); });
+    $all('#r-body .r-start').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var c = getCase(b.getAttribute('data-id'));
+        var err = startReview(c, 'periodic', '');
+        if (err) { b.parentNode.innerHTML = '<span class="err">' + esc(err) + '</span>'; return; }
+        save(); openCase(c.id);
+      });
+    });
+  }
+
+  $('#x-filter').addEventListener('input', renderExceptions);
+  function renderExceptions() {
+    var t = now(), f = $('#x-filter').value;
+    var list = state.exceptions.filter(function (x) { return !f || K.exceptionState(x, t) === f; });
+    $('#x-body').innerHTML = list.length ? list.map(function (x) {
+      var st = K.exceptionState(x, t), action = '';
+      if (x.status === 'Pending approval' && !can('decide_exception', null, { exception: x })) {
+        action = '<input type="text" class="x-note" data-id="' + x.id + '" placeholder="Reason for the decision"><div class="toolbar" style="margin:6px 0 0"><button class="btn small x-dec" data-id="' + x.id + '" data-a="1">Approve</button><button class="btn small ghost x-dec" data-id="' + x.id + '" data-a="0">Reject</button></div>';
+      } else if (x.status === 'Pending approval') {
+        action = '<span class="muted" style="font-size:12px">' + esc(can('decide_exception', null, { exception: x })) + '</span>';
+      } else if (x.status === 'Approved' && !can('close_exception', null, { exception: x })) {
+        action = '<input type="text" class="x-note" data-id="' + x.id + '" placeholder="How it was resolved"><div class="toolbar" style="margin:6px 0 0"><button class="btn small ghost x-close" data-id="' + x.id + '">Close as resolved</button></div>';
+      } else {
+        action = '<span class="muted" style="font-size:12px">' + esc(x.closeNote || x.decisionNote || '') + '</span>';
+      }
+      return '<tr><td><strong>' + esc(x.id) + '</strong></td><td><span class="click x-case" data-id="' + esc(x.caseId) + '" style="cursor:pointer;color:var(--accent)">' + esc(x.caseId) + '</span><br><span class="muted">' + esc(x.customer) + '</span></td><td><strong>' + esc(nameOf(K.EXCEPTION_TYPES, x.type)) + '</strong><br>' + esc(x.description) + '</td><td>' + esc(x.mitigation) + '</td><td>' + fmtDate(x.raisedAt) + '<div class="muted">' + esc(x.raisedBy) + '</div></td><td>' + esc(x.expiresOn) + '</td><td>' + exBadge(st) + (x.decidedBy ? '<div class="muted">' + esc(x.decidedBy) + '</div>' : '') + '</td><td style="min-width:190px">' + action + '<div class="err" id="x-err-' + esc(x.id) + '"></div></td></tr>';
+    }).join('') : '<tr><td colspan="8" class="muted">No exceptions. Raise one from a case.</td></tr>';
+    $all('#x-body .x-case').forEach(function (b) { b.addEventListener('click', function () { openCase(b.getAttribute('data-id')); }); });
+    function note(id) { var n = $('.x-note[data-id="' + id + '"]'); return n ? n.value : ''; }
+    $all('#x-body .x-dec').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var id = b.getAttribute('data-id'), err = decideException(getException(id), b.getAttribute('data-a') === '1', note(id));
+        if (err) { $('#x-err-' + id).textContent = err; return; }
+        save(); renderExceptions();
+      });
+    });
+    $all('#x-body .x-close').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var id = b.getAttribute('data-id'), err = closeException(getException(id), note(id));
+        if (err) { $('#x-err-' + id).textContent = err; return; }
+        save(); renderExceptions();
+      });
+    });
+  }
+
+  function renderQuality() {
+    var decided = state.cases.filter(function (c) { return c.status === 'Approved' || c.status === 'Rejected'; });
+    var sampled = decided.filter(K.qaSelected), done = decided.filter(function (c) { return c.qa; });
+    var passed = done.filter(function (c) { return c.qa.outcome === 'Pass'; }).length;
+    $('#qa-kpis').innerHTML = kpiHtml([
+      ['In the sample', sampled.length, 'of ' + decided.length + ' decisions'],
+      ['Checked', done.length, sampled.filter(function (c) { return !c.qa; }).length + ' sampled still waiting'],
+      ['Pass rate', done.length ? Math.round(passed / done.length * 1000) / 10 + '%' : 'n/a', passed + ' passed'],
+      ['Failed', done.length - passed, 'sent back to the analyst']
+    ]);
+    var rows = decided.slice().sort(function (a, b) {
+      var ka = (K.qaSelected(a) && !a.qa) ? 0 : a.qa ? 2 : 1, kb = (K.qaSelected(b) && !b.qa) ? 0 : b.qa ? 2 : 1;
+      return ka - kb;
+    });
+    $('#qa-body').innerHTML = rows.length ? rows.map(function (c) {
+      var d = K.decider(c), inS = K.qaSelected(c);
+      return '<tr class="click" data-id="' + c.id + '"><td><strong>' + c.id + '</strong></td><td>' + esc(c.name) + '</td><td>' + tierBadge(c.assessment.tier) + '</td><td>' + statusBadge(c.status) + '</td><td>' + esc(d ? d.label : '') + '</td><td>' + (inS ? 'Yes' + (c.assessment.tier === 'High' ? ' <span class="muted">(High risk)</span>' : '') : '<span class="muted">No</span>') + '</td><td>' + (c.qa ? qaBadge(c.qa.outcome) + '<div class="muted">' + esc(c.qa.by) + '</div>' : (inS ? '<span class="badge s-Pending">Waiting</span>' : '<span class="muted">-</span>')) + '</td></tr>';
+    }).join('') : '<tr><td colspan="7" class="muted">No decided cases yet.</td></tr>';
+    $all('#qa-body tr.click').forEach(function (r) { r.addEventListener('click', function () { openCase(r.getAttribute('data-id')); }); });
   }
 
   // ---------------------------------------------------------------------------
@@ -468,6 +824,10 @@
     ['Approve High risk after EDD', 'approve_high'],
     ['Senior management approval, PEP and high risk country (four eyes)', 'approve_edd'],
     ['Decide escalated cases and sanctions matches', 'mlro_case'],
+    ['Start a periodic or event driven review', 'start_review'],
+    ['Raise an exception', 'raise_exception'],
+    ['Approve an exception raised by someone else (four eyes)', 'decide_exception'],
+    ['QA check of a decision taken by someone else', 'qa_review'],
     ['Manage watchlists and high risk countries', 'manage_lists'],
     ['Grant or revoke delegated authority', 'manage_users'],
     ['View cases, metrics, audit trail and access log', 'view']
@@ -483,6 +843,10 @@
       case 'approve_high': r = K.authorize('approve', u, fake({ assessment: { tier: 'High', mandatoryEDD: [], sanctionsBlocked: false } })); break;
       case 'approve_edd': r = K.authorize('approve', u, fake({ assessment: { tier: 'High', mandatoryEDD: ['PEP'], sanctionsBlocked: false } })); break;
       case 'mlro_case': r = K.authorize('reject', u, fake({ status: 'Escalated' })); break;
+      case 'start_review': r = K.authorize('start_review', u); break;
+      case 'raise_exception': r = K.authorize('raise_exception', u); break;
+      case 'decide_exception': r = K.authorize('decide_exception', u, null, { exception: { raisedById: 'someone-else' } }); break;
+      case 'qa_review': r = K.authorize('qa_review', u, null, { deciderId: 'someone-else' }); break;
       case 'manage_lists': r = K.authorize('manage_lists', u); break;
       case 'manage_users': r = K.authorize('manage_users', u); break;
       case 'view': r = null; break;
@@ -520,19 +884,67 @@
     var keepUser = state.currentUserId;
     function chk(err) { if (err && window.console) console.error('Demo data rule violation: ' + err); }
     function as(uid, fn) { var prev = state.currentUserId; state.currentUserId = uid; fn(); state.currentUserId = prev; }
+    function ago(days, hours) { return new Date(now - days * 864e5 - (hours || 0) * 36e5).toISOString(); }
+    function inDays(days) { return new Date(now + days * 864e5).toISOString().slice(0, 10); }
+    function qaOk(edd) { return { id: 'pass', screening: 'pass', risk: 'pass', edd: edd ? 'pass' : 'na', authority: 'pass', rationale: 'pass' }; }
     var specs = [
-      { d: 21, input: { name: 'Siobhan Kelly', customerType: 'individual', country: 'IE', dob: '1990-07-15', sector: 'employee', idVerified: true, idExpiry: '2030-01-01', monthlyVolume: 3000, sourceOfFunds: 'Salary' },
-        act: function (c, t) { decide(c, 'approve', { rationale: 'Low risk retail customer, identity verified with passport, salary income consistent with expected activity.' }, t(3)); } },
-      { d: 20, input: { name: 'Bruno Carvalho Lima', customerType: 'soletrader', country: 'PT', dob: '1987-02-10', sector: 'hospitality', idVerified: true, idExpiry: '2031-05-01', monthlyVolume: 20000, sourceOfFunds: 'Restaurant revenue' },
-        act: function (c, t) { decide(c, 'approve', { rationale: 'Sole trader in hospitality, revenue in line with business size. Standard CDD completed.' }, t(6)); } },
-      { d: 19, input: { name: 'Greenfield Software Ltd', customerType: 'company', country: 'IE', dob: '2015-04-01', sector: 'tech', idVerified: true, monthlyVolume: 120000, sourceOfFunds: 'SaaS subscription revenue', ubos: [{ name: 'Ciara Byrne', dob: '1984-03-03', pct: '60' }, { name: 'Tom Walsh', dob: '1982-09-09', pct: '40' }] },
-        act: function (c, t) { decide(c, 'approve', { rationale: 'CRO extract verified, both beneficial owners identified and verified. Volume consistent with audited accounts.' }, t(20)); } },
+      // Payments and e-commerce sellers from Portugal and Brazil, with notes in Portuguese.
+      { d: 760, input: { name: 'Duarte & Filhos Transportes, Lda', customerType: 'company', country: 'PT', dob: '2004-05-12', sector: 'logistics', idDocType: 'national_id', idVerified: true, monthlyVolume: 260000, sourceOfFunds: 'Receitas de transporte rodoviário', registry: 'certidao', registryNumber: 'Código de acesso 1234-5678-9012', registryVerified: true, ubos: [{ name: 'Manuel Duarte', dob: '1961-04-04', pct: '70' }, { name: 'Rita Duarte', dob: '1990-02-02', pct: '30' }] },
+        act: function (c, t) {
+          chk(decide(c, 'approve', { rationale: 'Certidão Permanente confirma gerência e sócios; beneficiários verificados com Cartão de Cidadão. (EN: commercial register confirms managers and shareholders; UBOs verified.)' }, t(8)));
+          chk(raiseException(c, { type: 'review_overdue', description: 'Revisão periódica vencida: cliente não respondeu a dois pedidos de documentos. (EN: periodic review overdue, customer has not answered two document requests.)', mitigation: 'Payouts capped at EUR 50,000 a month until the review is complete.', expiresOn: inDays(30) }, ago(1)));
+        } },
+      { d: 350, input: { name: 'Pix Ponte Pagamentos Ltda', customerType: 'company', country: 'BR', dob: '2017-09-01', sector: 'msb', idDocType: 'passport', idVerified: true, monthlyVolume: 750000, sourceOfFunds: 'Taxas de remessa internacional', registry: 'cnpj', registryNumber: '12.345.678/0001-90', registryVerified: true, ubos: [{ name: 'Carlos Eduardo Ramos', dob: '1978-08-08', pct: '100' }] },
+        act: function (c, t) {
+          as('u-senior', function () { chk(decide(c, 'approve', { rationale: 'EDD concluída: autorização do Banco Central do Brasil, demonstrações auditadas e origem do patrimônio do sócio comprovadas. (EN: EDD complete, central bank licence, audited accounts and source of wealth evidenced.)', eddCompleted: true }, t(40))); });
+          as('u-mlro', function () { chk(submitQA(c, qaOk(true), '', t(70))); });
+        } },
+      { d: 200, input: { name: 'João Pedro Alves', customerType: 'soletrader', country: 'PT', dob: '1993-03-21', sector: 'retail', idDocType: 'national_id', idExpiry: inDays(-12), idVerified: true, monthlyVolume: 15000, sourceOfFunds: 'Vendas online no marketplace', registry: 'other', registryNumber: 'NIF 234567890, início de atividade nas Finanças', registryVerified: true },
+        act: function (c, t) {
+          chk(decide(c, 'approve', { rationale: 'Empresário em nome individual; Cartão de Cidadão e início de atividade verificados. (EN: sole trader, citizen card and tax registration verified.)' }, t(4)));
+          chk(startReview(c, 'id_expired', 'Cartão de Cidadão caducou; vendedor notificado para enviar o novo. (EN: citizen card expired, seller asked for the new one.)', ago(2)));
+          chk(decide(c, 'request_info', { rationale: 'Pedido de cópia do Cartão de Cidadão renovado, prazo de 30 dias. (EN: requested the renewed citizen card within 30 days.)' }, ago(2, -1)));
+          chk(raiseException(c, { type: 'doc_renewal', description: 'Documento caducado durante a relação; renovação já marcada no Espaço Cidadão. (EN: document expired during the relationship, renewal booked.)', mitigation: 'Payouts above EUR 2,000 held until the new card is received.', expiresOn: inDays(28) }, ago(2, -2)));
+          as('u-senior', function () { chk(decideException(state.exceptions[0], true, 'Low risk seller, mitigation proportionate, 30 day limit.', ago(1))); });
+        } },
+      { d: 120, input: { name: 'Rafael Monteiro Dias', customerType: 'individual', country: 'BR', dob: '1989-11-30', sector: 'retail', idDocType: 'passport', idExpiry: '2031-07-01', idVerified: true, monthlyVolume: 3000, sourceOfFunds: 'Revenda de artesanato pelo marketplace' },
+        act: function (c, t) {
+          chk(decide(c, 'approve', { rationale: 'Vendedor pessoa física, passaporte verificado, volume baixo e compatível com a atividade. (EN: individual seller, passport verified, low volume.)' }, t(2)));
+          chk(startReview(c, 'activity', 'Volume mensal subiu de EUR 3.000 para EUR 60.000 em 30 dias. (EN: monthly volume rose from EUR 3,000 to EUR 60,000 in 30 days.)', ago(1)));
+          chk(updateDuringReview(c, { monthlyVolume: 60000, sourceOfFunds: 'Revenda de artesanato e venda por atacado' }, ago(1, -1)));
+        } },
+      { d: 30, input: { name: 'Loja Sabor do Minho, Lda', customerType: 'company', country: 'PT', dob: '2019-06-14', sector: 'retail', idDocType: 'national_id', idVerified: true, monthlyVolume: 40000, sourceOfFunds: 'Vendas de produtos regionais online', registry: 'certidao', registryNumber: 'Código de acesso 2345-6789-0123', registryVerified: true, ubos: [{ name: 'Ana Ribeiro Costa', dob: '1985-01-17', pct: '100' }] },
+        act: function (c, t) {
+          chk(decide(c, 'approve', { rationale: 'Certidão Permanente válida, sócia única identificada; vendas compatíveis com o histórico na plataforma. (EN: valid register extract, single UBO, sales consistent.)' }, t(5)));
+          as('u-senior', function () { chk(submitQA(c, qaOk(false), '', t(48))); });
+        } },
+      { d: 25, input: { name: 'Ateliê Bahia Moda Ltda', customerType: 'company', country: 'BR', dob: '2021-02-08', sector: 'retail', idDocType: 'national_id', idVerified: true, monthlyVolume: 90000, sourceOfFunds: 'Vendas de roupas no marketplace', registry: 'cnpj', registryNumber: '23.456.789/0001-01', registryVerified: false, ubos: [{ name: 'Juliana Santos Lima', dob: '1991-05-05', pct: '100' }] },
+        act: function (c, t) { chk(decide(c, 'request_info', { rationale: 'Razão social no comprovante do CNPJ não confere com o contrato social. Pedido de documento atualizado. (EN: company name on the CNPJ record does not match the articles; updated document requested.)' }, t(3))); } },
+
+      { d: 21, input: { name: 'Siobhan Kelly', customerType: 'individual', country: 'IE', dob: '1990-07-15', sector: 'employee', idDocType: 'passport', idVerified: true, idExpiry: '2030-01-01', monthlyVolume: 3000, sourceOfFunds: 'Salary' },
+        act: function (c, t) {
+          decide(c, 'approve', { rationale: 'Low risk retail customer, identity verified with passport, salary income consistent with expected activity.' }, t(3));
+          as('u-senior', function () { chk(submitQA(c, qaOk(false), '', t(30))); });
+        } },
+      { d: 20, input: { name: 'Bruno Carvalho Lima', customerType: 'soletrader', country: 'PT', dob: '1987-02-10', sector: 'hospitality', idDocType: 'national_id', idVerified: true, idExpiry: '2031-05-01', monthlyVolume: 20000, sourceOfFunds: 'Restaurant revenue' },
+        act: function (c, t) {
+          decide(c, 'approve', { rationale: 'Sole trader in hospitality, revenue in line with business size. Standard CDD completed.' }, t(6));
+          as('u-senior', function () { chk(submitQA(c, Object.assign(qaOk(false), { id: 'fail', rationale: 'fail' }), 'No evidence of the business registration (NIF and início de atividade) on file, and the rationale does not say how revenue was checked. Returned to the analyst.', t(50))); });
+        } },
+      { d: 19, input: { name: 'Greenfield Software Ltd', customerType: 'company', country: 'IE', dob: '2015-04-01', sector: 'tech', idDocType: 'passport', idVerified: true, monthlyVolume: 120000, sourceOfFunds: 'SaaS subscription revenue', registry: 'cro', registryNumber: 'CRO 612345', registryVerified: true, ubos: [{ name: 'Ciara Byrne', dob: '1984-03-03', pct: '60' }, { name: 'Tom Walsh', dob: '1982-09-09', pct: '40' }] },
+        act: function (c, t) {
+          chk(raiseException(c, { type: 'old_proof', description: 'Proof of address for one director is 8 months old; policy asks for 6.', mitigation: 'Registered office confirmed on the CRO extract.', expiresOn: inDays(-19 + 21) }, t(1)));
+          as('u-senior', function () { chk(decideException(state.exceptions[0], true, 'Address risk covered by the CRO record; renewal requested.', t(2))); });
+          decide(c, 'approve', { rationale: 'CRO extract verified, both beneficial owners identified and verified. Volume consistent with audited accounts.' }, t(20));
+          chk(closeException(state.exceptions[0], 'Recent utility bill received and filed.', t(96)));
+          as('u-senior', function () { chk(submitQA(c, qaOk(false), '', t(120))); });
+        } },
       { d: 18, input: { name: 'Marko Belandi Ferrante', customerType: 'individual', country: 'AE', dob: '1968-03-14', sector: 'metals', idVerified: true, idExpiry: '2029-01-01', monthlyVolume: 400000, sourceOfFunds: 'Trading' },
         act: function (c, t) { as('u-analyst', function () { chk(decide(c, 'escalate', { rationale: 'Strong sanctions match on name variant and identical date of birth. Escalated to MLRO, funds not released.' }, t(1))); }); as('u-mlro', function () { chk(decide(c, 'reject', { rationale: 'MLRO confirmed the match. Relationship refused and the report handled by the MLRO.' }, t(5))); }); } },
       { d: 17, input: { name: 'Anna Grimes', customerType: 'individual', country: 'GB', dob: '1995-12-01', sector: 'professional', idVerified: true, idExpiry: '2032-01-01', monthlyVolume: 6000, sourceOfFunds: 'Consulting fees' },
         act: function (c, t) { c.hits.forEach(function (h, i) { reviewHit(c, i, 'false_positive', 'Different full name, date of birth (1995 vs 1981) and nationality.', t(2)); }); decide(c, 'approve', { rationale: 'Screening hit cleared as a false positive. Non EU customer with low expected volume.' }, t(4)); } },
       { d: 15, input: { name: 'Helena Marchetti', customerType: 'individual', country: 'IT', dob: '1970-04-12', sector: 'employee', idVerified: true, idExpiry: '2030-06-01', monthlyVolume: 15000, sourceOfFunds: 'Ministerial salary and property income', pepDeclared: true },
-        act: function (c, t) { as('u-analyst', function () { c.hits.forEach(function (h, i) { reviewHit(c, i, 'true_match', 'Customer confirmed as the Minister of Finance in the PEP list. Self declaration matches.', t(2)); }); }); as('u-senior', function () { chk(decide(c, 'approve', { rationale: 'PEP relationship approved after EDD. Source of wealth evidenced by public asset declarations and payslips.', eddCompleted: true }, t(52))); }); } },
+        act: function (c, t) { as('u-analyst', function () { c.hits.forEach(function (h, i) { reviewHit(c, i, 'true_match', 'Customer confirmed as the Minister of Finance in the PEP list. Self declaration matches.', t(2)); }); }); as('u-senior', function () { chk(decide(c, 'approve', { rationale: 'PEP relationship approved after EDD. Source of wealth evidenced by public asset declarations and payslips.', eddCompleted: true }, t(52))); }); as('u-mlro', function () { chk(submitQA(c, qaOk(true), '', t(80))); }); } },
       { d: 13, input: { name: 'Coinbridge Exchange Ltd', customerType: 'company', country: 'MT', dob: '2019-01-01', sector: 'crypto', idVerified: true, monthlyVolume: 900000, sourceOfFunds: 'Exchange fees', ubos: [] },
         act: function (c, t) { decide(c, 'request_info', { rationale: 'No beneficial owner disclosed. Requested shareholder register and ownership chart.' }, t(3)); } },
       { d: 11, input: { name: 'Farid Rahimi', customerType: 'individual', country: 'IR', dob: '1979-05-05', sector: 'logistics', idVerified: true, idExpiry: '2028-01-01', monthlyVolume: 30000, sourceOfFunds: 'Freight business' },
@@ -556,6 +968,10 @@
       var c;
       as(s.by || 'u-analyst', function () { c = createCase(Object.assign({ pepDeclared: false, adverseMedia: false, ubos: [] }, s.input, { createdAt: created }), created); });
       if (s.act) as('u-analyst', function () { s.act(c, function (h) { return new Date(new Date(created).getTime() + h * 36e5).toISOString(); }); });
+      if ((s.input.customerType === 'company' || s.input.customerType === 'trust') && s.input.registryVerified === undefined) {
+        // Older demo companies: record the register check that the rationale already mentions.
+        c.registryVerified = true; c.registry = c.registry || 'other';
+      }
     });
     state.currentUserId = keepUser;
   }

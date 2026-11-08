@@ -20,13 +20,17 @@ Every rule in the engine is mapped to a written policy ([docs/POLICY.md](docs/PO
 | Due diligence | CDD completeness checks (identity verification, expired ID, missing UBO). Mandatory EDD for PEPs and EU high risk third countries, with senior management approval | s.33, s.34A, s.37, s.38A, s.39 |
 | Decisions | Policy enforced decisions (approve, reject, request information, escalate to MLRO). A named analyst and a written rationale are always required. Strong sanctions matches cannot be cleared by the analyst | s.42, s.49 |
 | Access control (IAM) | RBAC combined with attribute based rules (ABAC): Analyst, Senior analyst, MLRO and read only Internal auditor. Least privilege, segregation of duties, four eyes approval, delegated authority granted by the MLRO, permission matrix and access log | s.54, s.37, s.38A |
+| Business verification | ID document type and the official register for companies and sole traders: CRO and RBO (Ireland), Certidão Permanente (Portugal), CNPJ (Brazil) | s.33 |
+| Ongoing CDD | Periodic reviews by risk tier (12, 24, 36 months) with overdue and due soon queues, event driven reviews (ownership, activity, country, expired ID, adverse media, PEP, list update), data updates logged before and after, re-screening and a new decision | s.33, s.35(3) |
+| Exceptions | Register of documented policy deviations with a mitigation and a deadline of at most 90 days, four eyes approval, overdue tracking and closure notes. Never unlocks a blocked case | s.54 |
+| Quality assurance | Risk based sample (all High risk, 1 in 4 of the rest), 6 point checklist by an independent senior reviewer, pass rate by analyst and error trends | s.54, Central Bank guidelines |
 | Audit | Append only audit trail on every case and periodic review date by risk tier | s.55 |
-| Metrics | Cases by status and tier, EDD rate, escalation rate, false positive rate, average time to decision, CSV export | Central Bank of Ireland guidelines |
+| Metrics | Cases by status and tier, EDD rate, escalation rate, false positive rate, average time to decision, reviews overdue, open exceptions, QA pass rate, ageing and SLA breaches, CSV export | Central Bank of Ireland guidelines |
 | Watchlists | Import the EU consolidated financial sanctions list (CSV), toggle high risk third countries | Delegated Regulation (EU) 2016/1675 |
 
 ## Screenshots
 
-Load the demo cases from the dashboard, then switch users in the header to see 15 realistic cases, including a sanctions match on a name variant, a cleared false positive, a confirmed PEP approved after EDD, a company with no disclosed beneficial owner and a high risk third country escalation.
+Load the demo cases from the dashboard, then switch users in the header to see 21 realistic cases, including a sanctions match on a name variant, a cleared false positive, a confirmed PEP approved after EDD, a company with no disclosed beneficial owner and a high risk third country escalation. Payments and e-commerce sellers from Portugal and Brazil, with case notes in Portuguese, show an overdue periodic review, an event driven review after an expired Cartão de Cidadão, a volume spike under review, a CNPJ that does not match the articles, exceptions awaiting four eyes approval and a failed QA check.
 
 ## Run it
 
@@ -50,7 +54,7 @@ node build.js
 index.html            UI layout and styles
 src/engine.js         Rules engine: matching, risk scoring, decisions, metrics (no DOM, unit tested)
 src/app.js            UI logic, case lifecycle, demo data, browser storage
-tests/engine.test.js  20 unit tests covering matching, CDD, EDD, decisions, access control, CSV import and metrics
+tests/engine.test.js  35 unit tests covering matching, CDD, EDD, decisions, access control, reviews, exceptions, QA, CSV import and metrics
 docs/POLICY.md        KYC and AML policy mapping every rule to the law
 build.js              Inlines the scripts into dist/index.html
 ```
