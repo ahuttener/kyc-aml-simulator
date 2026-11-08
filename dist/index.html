@@ -944,7 +944,14 @@
     if (view === 'lists') renderLists();
     if (view === 'new') renderPreview();
     if (view === 'access') renderAccess();
-    window.scrollTo(0, 0);
+    // Keep the tabs in view instead of jumping to the banner at the top of the page.
+    var tabs = document.querySelector('.appbar'), site = document.querySelector('.sitebar');
+    if (tabs) {
+      var y = tabs.getBoundingClientRect().top + window.pageYOffset - (site ? site.offsetHeight : 0) - 8;
+      if (window.pageYOffset > y) window.scrollTo(0, y);
+    } else {
+      window.scrollTo(0, 0);
+    }
   }
   $all('#nav button').forEach(function (b) { b.addEventListener('click', function () { show(b.getAttribute('data-view')); }); });
 
