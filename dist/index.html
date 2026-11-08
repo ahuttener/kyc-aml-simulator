@@ -1,0 +1,1381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KYC / IAM Simulator | CyberSecInfo</title>
+<meta name="theme-color" content="#0a0a1a">
+<meta property="og:type" content="website">
+<meta property="og:title" content="KYC / IAM Simulator | CyberSecInfo">
+<meta property="og:description" content="KYC onboarding, sanctions and PEP screening, risk based CDD and EDD and role based access control, mapped to Irish and EU AML law.">
+<meta property="og:url" content="https://cybersecinfo.com/kyc/">
+<meta property="og:image" content="https://cybersecinfo.com/kyc/docs/banner.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="/grcaudit/icon.png" type="image/png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Roboto:wght@300;400;500;700&display=swap">
+
+<meta name="description" content="Portfolio project by Adriano Huttener: KYC onboarding, sanctions and PEP screening, risk based CDD and EDD, case management and AML metrics mapped to Irish and EU law.">
+<style>
+  :root {
+    --bg: #0a0a1a; --panel: #111827; --panel2: #0e1022; --line: #1f2937; --line2: #374151;
+    --text: #e5e7eb; --strong: #ffffff; --muted: #9ca3af;
+    --accent: #22d3ee; --accent2: #06b6d4; --accent-soft: rgba(34,211,238,.08);
+    --low: #16a34a; --med: #d97706; --high: #dc2626; --info: #2563eb; --grey: #6b7280; --purple: #9333ea;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  html { color-scheme: dark; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+  body { margin: 0; font: 14px/1.55 Roboto, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif; color: var(--text);
+    background: radial-gradient(1200px 600px at 50% -200px, rgba(6,182,212,.12), transparent 70%), var(--bg); min-height: 100vh; }
+  h1, h2 { font-family: Orbitron, Roboto, ui-sans-serif, system-ui, sans-serif; }
+  .glow { text-shadow: 0 0 6px rgba(6,182,212,.55), 0 0 18px rgba(8,145,178,.35); }
+  /* barra do site (igual ao GRC Audit) */
+  .sitebar { position: sticky; top: 0; z-index: 50; border-bottom: 1px solid rgba(31,41,55,.7); background: rgba(10,10,26,.9); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+  .sitebar .inner { max-width: 1180px; margin: 0 auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 24px; padding: 10px 16px; }
+  .sitebar a { display: inline-flex; align-items: center; gap: 6px; border-radius: 6px; padding: 8px 10px; font-size: 13px; font-weight: 500; text-transform: uppercase; letter-spacing: .05em; color: #fff; text-decoration: none; transition: color .2s; white-space: nowrap; }
+  .sitebar a:hover, .sitebar a.on { color: var(--accent); }
+  .sitebar svg { width: 14px; height: 14px; flex: none; }
+  .sitebar .links { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; max-width: 100%; }
+  .sitebar .links::-webkit-scrollbar { display: none; }
+  /* topo */
+  .hero { max-width: 1180px; margin: 0 auto; padding: 28px 20px 4px; }
+  .banner-img { overflow: hidden; border-radius: 16px; border: 1px solid var(--line); background: var(--panel); box-shadow: 0 0 48px -16px rgba(6,182,212,.45); margin-bottom: 22px; }
+  .banner-img img { display: block; width: 100%; height: auto; }
+  .hero .brand { display: flex; align-items: center; gap: 16px; }
+  .hero .emblem { width: 56px; height: 56px; flex: none; border-radius: 50%; box-shadow: 0 0 24px rgba(6,182,212,.45); }
+  .hero h1 { margin: 0; font-size: 30px; line-height: 36px; font-weight: 900; text-transform: uppercase; letter-spacing: .05em; color: var(--accent); }
+  .hero .tag { margin: 4px 0 0; font-size: 12px; line-height: 16px; font-weight: 500; text-transform: uppercase; letter-spacing: .18em; color: #9ca3af; }
+  @media (min-width: 640px) { .hero .emblem { width: 64px; height: 64px; } .hero h1 { font-size: 36px; line-height: 40px; } .hero .tag { font-size: 14px; line-height: 20px; } }
+  .hero .intro { max-width: 820px; margin: 16px 0 0; font-size: 14px; line-height: 1.65; color: #cbd5e1; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; padding: 0; margin: 18px 0 0; }
+  .chips li { border: 1px solid rgba(34,211,238,.25); background: var(--accent-soft); color: #e2e8f0; border-radius: 999px; padding: 4px 12px; font-size: 12px; font-weight: 500; }
+
+  /* abas do app */
+  .appbar { max-width: 1180px; margin: 18px auto 0; padding: 0 20px; display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+  nav { display: flex; gap: 4px; flex-wrap: wrap; background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 4px; }
+  nav button { background: transparent; color: var(--muted); border: 0; padding: 8px 13px; border-radius: 7px; cursor: pointer; font: 500 13px Roboto, sans-serif; transition: color .2s, background .2s; }
+  nav button:hover { color: #fff; }
+  nav button.active { background: rgba(34,211,238,.12); color: var(--accent); box-shadow: inset 0 0 0 1px rgba(34,211,238,.35); }
+  .userbox { margin-left: auto; font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+  .userbox select { width: auto; padding: 6px 9px; font-size: 12.5px; }
+  main { max-width: 1180px; margin: 0 auto; padding: 18px 20px 60px; }
+  .banner { background: rgba(217,119,6,.08); border: 1px solid rgba(217,119,6,.35); color: #fcd34d; padding: 9px 14px; border-radius: 10px; font-size: 12.5px; margin-bottom: 18px; }
+  h2 { font-size: 18px; font-weight: 700; color: #fff; margin: 4px 0 14px; letter-spacing: .02em; }
+  h3 { font-size: 15px; color: #fff; margin: 0 0 10px; font-weight: 600; }
+  .grid { display: grid; gap: 14px; }
+  .kpis { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+  .two { grid-template-columns: 1fr 1fr; }
+  .form-layout { grid-template-columns: 1.4fr 1fr; align-items: start; }
+  @media (max-width: 860px) { .two, .form-layout { grid-template-columns: 1fr; } .userbox { margin-left: 0; } main table { display: block; overflow-x: auto; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; }
+  .kpi { border-top: 2px solid rgba(34,211,238,.5); }
+  .kpi .label { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; }
+  .kpi .value { font-family: Orbitron, Roboto, sans-serif; font-size: 26px; font-weight: 700; margin-top: 4px; color: var(--accent); }
+  .kpi .hint { color: var(--muted); font-size: 12px; }
+  .bar-row { display: grid; grid-template-columns: 120px 1fr 40px; align-items: center; gap: 10px; margin: 7px 0; font-size: 13px; }
+  .bar { background: var(--line); border-radius: 4px; height: 12px; overflow: hidden; }
+  .bar > span { display: block; height: 100%; border-radius: 4px; }
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+  button.btn, label.btn { background: var(--accent2); color: #04121a; border: 0; padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; transition: background .2s, box-shadow .2s; }
+  button.btn:hover, label.btn:hover { background: var(--accent); box-shadow: 0 0 14px rgba(34,211,238,.35); }
+  button.ghost, label.ghost { background: transparent; color: var(--text); border: 1px solid var(--line2); }
+  button.ghost:hover, label.ghost:hover { background: var(--panel2); border-color: var(--accent); color: var(--accent); box-shadow: none; }
+  button.danger { background: var(--high); color: #fff; }
+  button.danger:hover { background: #ef4444; box-shadow: 0 0 14px rgba(239,68,68,.35); }
+  button.small { padding: 4px 9px; font-size: 12px; }
+  button:disabled { opacity: .4; cursor: not-allowed; box-shadow: none !important; }
+  input[type=text], input[type=date], input[type=number], select, textarea {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--line2); border-radius: 8px; font: inherit; background: var(--panel2); color: var(--text); }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(34,211,238,.15); }
+  input[type=date]::-webkit-calendar-picker-indicator { filter: invert(.8); }
+  textarea { min-height: 70px; resize: vertical; }
+  .field { margin-bottom: 12px; }
+  .field > label { display: block; font-weight: 500; font-size: 12.5px; margin-bottom: 4px; color: #d1d5db; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .check { display: flex; gap: 8px; align-items: flex-start; margin: 6px 0; font-size: 13px; }
+  .check input { margin-top: 3px; accent-color: var(--accent2); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; }
+  tbody tr.click { cursor: pointer; }
+  tbody tr.click:hover { background: rgba(34,211,238,.05); }
+  .badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; color: #fff; white-space: nowrap; }
+  .t-Low { background: var(--low); } .t-Medium { background: var(--med); } .t-High { background: var(--high); }
+  .s-Approved { background: var(--low); } .s-Rejected { background: var(--high); } .s-Escalated { background: var(--purple); }
+  .s-Pending { background: var(--info); } .s-Info { background: var(--grey); }
+  .h-strong { background: var(--high); } .h-potential { background: var(--med); } .h-cleared { background: var(--low); } .h-true { background: var(--purple); }
+  .muted { color: var(--muted); }
+  .rec { border-left: 4px solid var(--info); background: rgba(37,99,235,.1); padding: 10px 14px; border-radius: 8px; margin: 8px 0 14px; }
+  .rec.BLOCK { border-color: var(--high); background: rgba(220,38,38,.1); }
+  .rec.CDD_INCOMPLETE, .rec.REVIEW_HITS { border-color: var(--med); background: rgba(217,119,6,.1); }
+  .rec.EDD { border-color: var(--high); background: rgba(220,38,38,.08); }
+  .rec.STANDARD { border-color: var(--low); background: rgba(22,163,74,.1); }
+  .score { font-family: Orbitron, Roboto, sans-serif; font-size: 30px; font-weight: 700; color: #fff; }
+  .ref { font-size: 11.5px; color: #67e8f9; white-space: nowrap; }
+  .audit li { margin-bottom: 6px; }
+  .audit time { color: var(--muted); font-size: 12px; margin-right: 6px; }
+  .pill-list { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pill { border: 1px solid var(--line2); border-radius: 999px; padding: 3px 10px; font-size: 12px; background: var(--panel2); color: var(--text); cursor: pointer; user-select: none; }
+  .pill:hover { border-color: var(--accent); }
+  .pill.on { background: var(--high); color: #fff; border-color: var(--high); }
+  .ubo { display: grid; grid-template-columns: 2fr 1.2fr 0.8fr auto; gap: 8px; margin-bottom: 8px; }
+  .err { color: #f87171; font-weight: 600; margin-top: 8px; }
+  .ok { color: #4ade80; font-weight: 600; margin-top: 8px; }
+  .hit { border: 1px solid var(--line); background: var(--panel2); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
+  .hidden { display: none !important; }
+  footer { text-align: center; color: var(--muted); font-size: 12px; padding: 22px; border-top: 1px solid var(--line); }
+  a { color: var(--accent); }
+  .back { cursor: pointer; color: var(--accent); font-weight: 600; margin-bottom: 10px; display: inline-block; }
+  code { background: var(--panel2); border: 1px solid var(--line); color: #67e8f9; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  strong { color: #fff; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; } ::-webkit-scrollbar-thumb { background: var(--line2); border-radius: 6px; } ::-webkit-scrollbar-track { background: var(--panel2); }
+</style>
+</head>
+<body>
+<header class="sitebar">
+  <div class="inner">
+    <a href="https://cybersecinfo.com/"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>Back</a>
+    <div class="links">
+      <a href="https://github.com/ahuttener" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.4 5.4 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg>GitHub</a>
+      <a href="https://cybersecinfo.com/grcaudit/"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>GRC Audit</a>
+      <a href="https://cybersecinfo.com/kyc/" class="on" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m16 11 2 2 4-4"/></svg>KYC/IAM</a>
+      <a href="https://cybersecinfo.com/editor-pdf/"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>Editor PDF</a>
+      <a href="https://cybersecinfo.com/#protection">Protection</a>
+      <a href="https://cybersecinfo.com/#chatbot">AI Chat</a>
+      <a href="https://cybersecinfo.com/#quiz">Quiz</a>
+    </div>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="banner-img"><img src="docs/banner.jpg" width="1600" height="640" alt="KYC / IAM: Know Your Customer and Identity Access Management. Identity verification, access control, fraud prevention, secure access"></div>
+  <div class="brand">
+    <img class="emblem" src="https://cybersecinfo.com/grcaudit/emblem.png" width="256" height="256" alt="CyberSecInfo - Information Security">
+    <div>
+      <h1 class="glow">KYC / IAM</h1>
+      <p class="tag">Onboarding &rarr; screening, risk &amp; access control</p>
+    </div>
+  </div>
+  <ul class="chips" aria-label="Rules covered"><li>CJA 2010</li><li>EU AMLR 2024/1624</li><li>EU Sanctions</li><li>PEP Screening</li><li>CDD / EDD</li><li>UBO</li><li>RBAC + ABAC</li><li>SoD / Four eyes</li></ul>
+  <p class="intro">Onboard a customer and the simulator screens them and every beneficial owner against sanctions and PEP lists, scores the risk, applies CDD or EDD and enforces who may decide: analyst, senior analyst, MLRO or auditor. Every rule is mapped to the Irish Criminal Justice Act 2010 and the EU AML rulebook, and every action lands in an append only audit trail.</p>
+</section>
+
+<div class="appbar">
+  <nav id="nav">
+    <button data-view="dashboard" class="active">Dashboard</button>
+    <button data-view="new">New case</button>
+    <button data-view="queue">Case queue</button>
+    <button data-view="lists">Watchlists</button>
+    <button data-view="access">Access control</button>
+    <button data-view="policy">Policy</button>
+  </nav>
+  <label class="userbox">Signed in as <select id="user-switch"></select></label>
+</div>
+
+<main>
+  <div class="banner">Educational portfolio project. All sanctions and PEP entries are fictional sample data. Do not enter real personal data: cases are stored only in this browser.</div>
+
+  <!-- DASHBOARD -->
+  <section id="view-dashboard">
+    <div class="toolbar">
+      <h2 style="margin:0 auto 0 0">KYC and AML metrics</h2>
+      <button class="btn" id="btn-demo">Load demo cases</button>
+      <button class="btn ghost" id="btn-export">Export cases (CSV)</button>
+      <button class="btn ghost" id="btn-reset">Reset all data (MLRO only)</button>
+    </div>
+    <div class="card hidden" id="export-panel" style="margin-bottom:14px">
+      <h3>Case export (CSV, includes the audit trail)</h3>
+      <textarea id="export-text" readonly style="min-height:140px;font-family:monospace;font-size:12px"></textarea>
+      <div class="toolbar" style="margin:8px 0 0"><button class="btn" id="export-copy">Copy</button><button class="btn ghost" id="export-download">Download .csv</button><button class="btn ghost" id="export-close">Close</button><span class="muted" id="export-msg"></span></div>
+    </div>
+    <div class="muted" id="dash-msg" style="margin:-6px 0 10px;min-height:18px"></div>
+    <div class="grid kpis" id="kpis"></div>
+    <div class="grid two" style="margin-top:14px">
+      <div class="card"><h3>Cases by status</h3><div id="chart-status"></div></div>
+      <div class="card"><h3>Cases by risk tier</h3><div id="chart-tier"></div></div>
+      <div class="card"><h3>Screening</h3><div id="chart-hits"></div></div>
+      <div class="card"><h3>Control effectiveness</h3><div id="chart-controls"></div></div>
+    </div>
+  </section>
+
+  <!-- NEW CASE -->
+  <section id="view-new" class="hidden">
+    <h2>New customer onboarding</h2>
+    <div class="grid form-layout">
+      <form class="card" id="case-form" autocomplete="off">
+        <h3>1. Customer identification (CDD, s.33)</h3>
+        <div class="row">
+          <div class="field"><label>Customer type</label><select name="customerType" id="f-type"></select></div>
+          <div class="field"><label>Country of residence or incorporation</label><select name="country" id="f-country"></select></div>
+        </div>
+        <div class="field"><label>Full legal name</label><input type="text" name="name" required placeholder="Name of the individual or the company"></div>
+        <div class="row">
+          <div class="field"><label id="lbl-dob">Date of birth</label><input type="date" name="dob"></div>
+          <div class="field"><label>Business sector or occupation</label><select name="sector" id="f-sector"></select></div>
+        </div>
+        <div class="row">
+          <div class="field"><label>ID document expiry date</label><input type="date" name="idExpiry"></div>
+          <div class="field" style="padding-top:22px"><label class="check"><input type="checkbox" name="idVerified"> Identity verified against a reliable, independent source</label></div>
+        </div>
+
+        <div id="ubo-block" class="hidden">
+          <h3 style="margin-top:8px">2. Beneficial owners (more than 25%)</h3>
+          <div id="ubo-rows"></div>
+          <button type="button" class="btn ghost small" id="add-ubo">Add beneficial owner</button>
+        </div>
+
+        <h3 style="margin-top:16px">3. Nature of the relationship (s.35)</h3>
+        <div class="row">
+          <div class="field"><label>Expected monthly volume (EUR)</label><input type="number" name="monthlyVolume" min="0" step="1000" value="5000"></div>
+          <div class="field"><label>Source of funds</label><input type="text" name="sourceOfFunds" placeholder="e.g. salary, business revenue"></div>
+        </div>
+        <label class="check"><input type="checkbox" name="pepDeclared"> Customer or a beneficial owner declares PEP status (s.37)</label>
+        <label class="check"><input type="checkbox" name="adverseMedia"> Adverse media linked to financial crime found</label>
+        <div style="margin-top:14px"><button class="btn" type="submit">Screen and create case</button></div>
+        <div id="form-msg"></div>
+      </form>
+
+      <div class="card" id="preview">
+        <h3>Live risk preview</h3>
+        <div id="preview-body" class="muted">Start typing to see the risk score.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- QUEUE -->
+  <section id="view-queue" class="hidden">
+    <div class="toolbar">
+      <h2 style="margin:0 auto 0 0">Case queue</h2>
+      <input type="text" id="q-search" placeholder="Search name or case ID" style="max-width:220px">
+      <select id="q-status" style="max-width:170px"><option value="">All statuses</option></select>
+      <select id="q-tier" style="max-width:140px"><option value="">All tiers</option><option>Low</option><option>Medium</option><option>High</option></select>
+    </div>
+    <div class="card" style="padding:4px 8px"><table>
+      <thead><tr><th>Case</th><th>Customer</th><th>Type</th><th>Country</th><th>Risk</th><th>Hits</th><th>Status</th><th>Created</th></tr></thead>
+      <tbody id="q-body"></tbody>
+    </table></div>
+  </section>
+
+  <!-- CASE DETAIL -->
+  <section id="view-case" class="hidden"></section>
+
+  <!-- WATCHLISTS -->
+  <section id="view-lists" class="hidden">
+    <h2>Watchlists and reference data</h2>
+    <div class="grid two">
+      <div class="card">
+        <h3>Sanctions list</h3>
+        <p class="muted" id="sanc-info"></p>
+        <div class="toolbar">
+          <label class="btn">Import CSV<input type="file" id="sanc-file" accept=".csv,text/csv" class="hidden"></label>
+          <button class="btn ghost" id="sanc-restore">Restore fictional sample</button>
+        </div>
+        <p class="muted" style="font-size:12.5px">Accepts the EU consolidated financial sanctions list in CSV format, or any CSV with a name column. Columns such as <code>NameAlias_WholeName</code>, <code>Entity_LogicalId</code> and <code>BirthDate_BirthDate</code> are detected automatically. Rows that share an ID become aliases of one entry.</p>
+        <div id="sanc-msg"></div>
+        <div style="max-height:320px;overflow:auto"><table><thead><tr><th>ID</th><th>Name and aliases</th><th>DOB</th></tr></thead><tbody id="sanc-body"></tbody></table></div>
+      </div>
+      <div class="card">
+        <h3>PEP list</h3>
+        <p class="muted">Fictional sample entries used for list based PEP screening.</p>
+        <div style="max-height:200px;overflow:auto"><table><thead><tr><th>Name</th><th>Role</th></tr></thead><tbody id="pep-body"></tbody></table></div>
+        <h3 style="margin-top:18px">High risk third countries (s.38A)</h3>
+        <p class="muted" style="font-size:12.5px">Illustrative subset of the EU list (Delegated Regulation (EU) 2016/1675, as amended). Click to toggle. Always check the current official list.</p>
+        <div class="pill-list" id="hr-countries"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ACCESS CONTROL -->
+  <section id="view-access" class="hidden">
+    <h2>Access control (IAM)</h2>
+    <div class="rec STANDARD" id="acc-me"></div>
+    <div class="card" style="margin-bottom:14px">
+      <h3>Security model</h3>
+      <p style="margin-top:0">Access is enforced by the rules engine on every action, not only by hiding buttons. The model combines <strong>role based access control (RBAC)</strong> with <strong>attribute based rules (ABAC)</strong> that look at the case risk tier, its status, who prepared it and whether the user holds delegated authority.</p>
+      <table><tbody>
+        <tr><td><strong>Least privilege</strong></td><td>Anything not explicitly allowed is denied. Analysts approve only Low and Medium risk cases.</td></tr>
+        <tr><td><strong>Segregation of duties</strong></td><td>Internal audit is read only. Only the MLRO decides escalated cases, manages watchlists and grants authority.</td></tr>
+        <tr><td><strong>Four eyes principle</strong></td><td>Senior management approval for PEP and high risk country cases must come from a different person than the case preparer.</td></tr>
+        <tr><td><strong>Delegated authority</strong></td><td>New analysts start without approval rights. The MLRO grants it once competency is shown, and the grant is logged.</td></tr>
+        <tr><td><strong>Accountability</strong></td><td>Every case action records the user and role in the audit trail. Sign ins and privilege changes go to the access log.</td></tr>
+      </tbody></table>
+      <p class="muted" style="font-size:12.5px;margin-bottom:0">Sign in is simulated with a user switcher. A production system would use single sign on with MFA, and enforce the same rules on the server.</p>
+    </div>
+    <div class="grid two">
+      <div class="card"><h3>Users and delegated authority</h3><table><thead><tr><th>User</th><th>Role</th><th>Approval authority</th></tr></thead><tbody id="acc-users"></tbody></table></div>
+      <div class="card"><h3>Access log</h3><ol class="audit" id="acc-log" style="max-height:260px;overflow:auto"></ol></div>
+    </div>
+    <div class="card" style="margin-top:14px;overflow-x:auto"><h3>Permission matrix</h3><table><thead id="acc-matrix-head"></thead><tbody id="acc-matrix"></tbody></table></div>
+  </section>
+
+  <!-- POLICY -->
+  <section id="view-policy" class="hidden">
+    <h2>Policy summary</h2>
+    <div class="card">
+      <p>Every rule in this simulator maps to a section of the written policy (<code>docs/POLICY.md</code>) and to Irish or EU law. The main reference is the <strong>Criminal Justice (Money Laundering and Terrorist Financing) Act 2010</strong>, as amended, which transposes the EU AML Directives. The new EU single rulebook, <strong>Regulation (EU) 2024/1624 (AMLR)</strong>, applies from 10 July 2027.</p>
+      <table>
+        <thead><tr><th>Control</th><th>What the simulator does</th><th>Legal basis</th></tr></thead>
+        <tbody>
+          <tr><td>Risk based approach</td><td>Points based score from customer type, geography, sector, PEP status, ownership, volume, source of funds and adverse media. Tiers: Low 0 to 24, Medium 25 to 49, High 50 or more.</td><td class="ref">CJA 2010 s.30A, s.30B</td></tr>
+          <tr><td>Customer due diligence</td><td>Identity must be verified and, for companies, beneficial owners identified. Otherwise CDD is incomplete and approval is blocked.</td><td class="ref">s.33, s.35</td></tr>
+          <tr><td>Simplified due diligence</td><td>Only for Low risk cases without any mandatory EDD trigger.</td><td class="ref">s.34A</td></tr>
+          <tr><td>PEPs</td><td>Self declaration plus list screening. Confirmed PEPs force High risk, EDD and senior management approval.</td><td class="ref">s.37</td></tr>
+          <tr><td>High risk third countries</td><td>Forces High risk, EDD and senior management approval.</td><td class="ref">s.38A</td></tr>
+          <tr><td>Enhanced due diligence</td><td>High risk cases need EDD confirmation (source of wealth and funds) before approval.</td><td class="ref">s.39</td></tr>
+          <tr><td>Sanctions screening</td><td>Jaro Winkler fuzzy matching on names and aliases. Strong match (0.92 or more, DOB consistent) blocks the case. Potential match (0.82 or more) requires analyst review.</td><td class="ref">EU sanctions regulations</td></tr>
+          <tr><td>Suspicious activity</td><td>Escalation to the MLRO is an internal action only. No customer facing text is generated.</td><td class="ref">s.42, s.49 (tipping off)</td></tr>
+          <tr><td>Record keeping</td><td>Append only audit trail on every case, included in the export.</td><td class="ref">s.55 (5 years)</td></tr>
+          <tr><td>Access control</td><td>RBAC with attribute based rules: least privilege, segregation of duties, four eyes approval for PEP and high risk country cases, delegated authority granted by the MLRO, access log.</td><td class="ref">s.37, s.38A (senior approval), s.54 (internal controls)</td></tr>
+          <tr><td>Human oversight</td><td>The engine recommends. A named analyst always records the final decision with a written rationale.</td><td class="ref">AMLR (from 2027)</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<footer>Part of <a href="https://cybersecinfo.com/">CyberSecInfo</a>. Built by Adriano Huttener as a portfolio project. MSc Cybersecurity, National College of Ireland. Not legal advice.</footer>
+
+<script>
+/*
+ * KYC Onboarding and Screening Simulator: rules engine
+ * Author: Adriano Huttener
+ *
+ * Pure logic with no DOM access, so it can run in the browser and be unit tested in Node.
+ * Every rule references docs/POLICY.md and the Criminal Justice (Money Laundering and
+ * Terrorist Financing) Act 2010 ("CJA 2010").
+ */
+(function (root) {
+  'use strict';
+
+  // ---------------------------------------------------------------------------
+  // Reference data
+  // ---------------------------------------------------------------------------
+
+  // eea: true for EU and EEA member states.
+  var COUNTRIES = [
+    ['IE', 'Ireland', true], ['PT', 'Portugal', true], ['ES', 'Spain', true], ['FR', 'France', true],
+    ['DE', 'Germany', true], ['IT', 'Italy', true], ['NL', 'Netherlands', true], ['BE', 'Belgium', true],
+    ['PL', 'Poland', true], ['RO', 'Romania', true], ['SE', 'Sweden', true], ['AT', 'Austria', true],
+    ['LU', 'Luxembourg', true], ['CY', 'Cyprus', true], ['MT', 'Malta', true], ['NO', 'Norway', true],
+    ['GB', 'United Kingdom', false], ['US', 'United States', false], ['BR', 'Brazil', false],
+    ['CA', 'Canada', false], ['AU', 'Australia', false], ['CH', 'Switzerland', false],
+    ['AE', 'United Arab Emirates', false], ['IN', 'India', false], ['CN', 'China', false],
+    ['TR', 'Turkey', false], ['NG', 'Nigeria', false], ['ZA', 'South Africa', false],
+    ['MX', 'Mexico', false], ['AR', 'Argentina', false], ['RU', 'Russia', false],
+    ['AF', 'Afghanistan', false], ['CD', 'Democratic Republic of the Congo', false],
+    ['HT', 'Haiti', false], ['IR', 'Iran', false], ['KP', 'North Korea', false],
+    ['MM', 'Myanmar', false], ['SS', 'South Sudan', false], ['SY', 'Syria', false],
+    ['YE', 'Yemen', false], ['VE', 'Venezuela', false]
+  ].map(function (c) { return { code: c[0], name: c[1], eea: c[2] }; });
+
+  // Illustrative subset of the EU list of high risk third countries
+  // (Delegated Regulation (EU) 2016/1675, as amended). The list changes regularly:
+  // always verify against the current version before relying on it.
+  var HIGH_RISK_THIRD_COUNTRIES = ['AF', 'CD', 'HT', 'IR', 'KP', 'MM', 'SS', 'SY', 'YE', 'VE'];
+
+  var SECTORS = [
+    { id: 'retail', name: 'Retail and e-commerce', highRisk: false },
+    { id: 'tech', name: 'Technology and software', highRisk: false },
+    { id: 'hospitality', name: 'Hospitality and food', highRisk: false },
+    { id: 'professional', name: 'Professional services', highRisk: false },
+    { id: 'logistics', name: 'Logistics and transport', highRisk: false },
+    { id: 'realestate', name: 'Real estate', highRisk: false },
+    { id: 'employee', name: 'Employee or private individual', highRisk: false },
+    { id: 'msb', name: 'Money services and remittance', highRisk: true },
+    { id: 'crypto', name: 'Crypto assets', highRisk: true },
+    { id: 'gambling', name: 'Gambling', highRisk: true },
+    { id: 'metals', name: 'Precious metals and stones', highRisk: true },
+    { id: 'cash', name: 'Cash intensive business', highRisk: true },
+    { id: 'arms', name: 'Arms and defence', highRisk: true }
+  ];
+
+  var CUSTOMER_TYPES = [
+    { id: 'individual', name: 'Individual', points: 0 },
+    { id: 'soletrader', name: 'Sole trader', points: 5 },
+    { id: 'company', name: 'Company', points: 10 },
+    { id: 'trust', name: 'Trust or complex structure', points: 20 }
+  ];
+
+  // FICTIONAL sample sanctions list. Names, dates and entities are invented for
+  // demonstration. Import the real EU consolidated list for genuine screening.
+  var SAMPLE_SANCTIONS = [
+    { id: 'S-001', name: 'Marco Bellandi Ferrante', aliases: ['Marko Belandi', 'M. B. Ferrante'], dob: '1968-03-14', type: 'person', program: 'Sample programme A (fictional)' },
+    { id: 'S-002', name: 'Orlan Vexby', aliases: ['Orlan Veksbi'], dob: '1975-11-02', type: 'person', program: 'Sample programme B (fictional)' },
+    { id: 'S-003', name: 'Kestrel Maritime Holdings Ltd', aliases: ['Kestrel Maritime', 'KMH Shipping'], dob: '', type: 'entity', program: 'Sample programme A (fictional)' },
+    { id: 'S-004', name: 'Anatol Grimsrud', aliases: [], dob: '1981-06-30', type: 'person', program: 'Sample programme C (fictional)' },
+    { id: 'S-005', name: 'Sable Ridge Mining Corp', aliases: ['Sable Ridge Mining'], dob: '', type: 'entity', program: 'Sample programme B (fictional)' },
+    { id: 'S-006', name: 'Lucia Montaverde Rios', aliases: ['Lucía Montaverde'], dob: '1972-09-21', type: 'person', program: 'Sample programme C (fictional)' },
+    { id: 'S-007', name: 'Tomasz Wilczewski Brandt', aliases: ['Tomas Brandt'], dob: '1964-01-08', type: 'person', program: 'Sample programme A (fictional)' },
+    { id: 'S-008', name: 'Northgate Bullion Exchange', aliases: ['Northgate Bullion'], dob: '', type: 'entity', program: 'Sample programme B (fictional)' }
+  ];
+
+  // FICTIONAL sample PEP list. Roles refer to invented countries.
+  var SAMPLE_PEPS = [
+    { id: 'P-001', name: 'Helena Marchetti', aliases: ['Helena Marchetti Rossi'], dob: '1970-04-12', role: 'Minister of Finance, Republic of Valdoria (fictional)' },
+    { id: 'P-002', name: 'Jonas Okafor Lindqvist', aliases: [], dob: '1966-08-03', role: 'Central bank governor, Kingdom of Estrava (fictional)' },
+    { id: 'P-003', name: 'Rui Albuquerque Sena', aliases: ['Rui Sena'], dob: '1959-12-19', role: 'Supreme court judge, Republic of Valdoria (fictional)' },
+    { id: 'P-004', name: 'Mirela Dragan', aliases: [], dob: '1983-02-27', role: 'Spouse of a head of state, Kingdom of Estrava (fictional)' }
+  ];
+
+  var THRESHOLDS = { strong: 0.92, potential: 0.82 };
+
+  var TIERS = [
+    { id: 'Low', min: 0, max: 24, reviewMonths: 36 },
+    { id: 'Medium', min: 25, max: 49, reviewMonths: 24 },
+    { id: 'High', min: 50, max: Infinity, reviewMonths: 12 }
+  ];
+
+  // ---------------------------------------------------------------------------
+  // Identity and access management (POLICY.md section 10A)
+  // ---------------------------------------------------------------------------
+
+  var ROLES = {
+    analyst: { name: 'Analyst', summary: 'Creates cases, reviews screening hits, approves Low and Medium risk cases if delegated authority has been granted.' },
+    senior: { name: 'Senior analyst', summary: 'Everything an analyst can do, plus High risk approvals and senior management approval for PEP and high risk third country cases.' },
+    mlro: { name: 'MLRO', summary: 'Decides escalated cases and sanctions matches, manages watchlists, grants delegated authority and resets data.' },
+    auditor: { name: 'Internal auditor', summary: 'Read only access to cases, metrics and logs. Cannot change anything (segregation of duties).' }
+  };
+
+  // Fictional demo users. Sign in is simulated: there are no passwords in this project.
+  var DEMO_USERS = [
+    { id: 'u-trainee', name: 'J. Byrne', role: 'analyst', delegatedAuthority: false },
+    { id: 'u-analyst', name: 'A. Huttener', role: 'analyst', delegatedAuthority: true },
+    { id: 'u-senior', name: 'S. Walsh', role: 'senior', delegatedAuthority: true },
+    { id: 'u-mlro', name: 'M. Kelly', role: 'mlro', delegatedAuthority: true },
+    { id: 'u-audit', name: 'R. Doyle', role: 'auditor', delegatedAuthority: false }
+  ];
+
+  // Returns null when the user may perform the action, otherwise the reason it is denied.
+  // Least privilege: anything not explicitly allowed is denied.
+  function authorize(action, user, c, extra) {
+    if (!user) return 'Sign in first.';
+    var r = user.role;
+    if (!ROLES[r]) return 'Unknown role.';
+    if (r === 'auditor') return 'Internal audit has read only access (segregation of duties).';
+    switch (action) {
+      case 'create_case':
+      case 'rescreen':
+        return null;
+      case 'manage_lists':
+      case 'manage_users':
+      case 'reset_data':
+        return r === 'mlro' ? null : 'Only the MLRO can do this.';
+      case 'review_hit':
+        if (extra && extra.hit && extra.hit.listType === 'Sanctions' && extra.outcome === 'true_match' && r === 'analyst') {
+          return 'Confirming a sanctions true match needs a senior analyst or the MLRO.';
+        }
+        return null;
+      case 'approve':
+      case 'reject':
+      case 'escalate':
+      case 'request_info':
+        if (!c || !c.assessment) return 'No case selected.';
+        var a = c.assessment;
+        if (c.status === 'Escalated' && action === 'escalate') return 'The case is already with the MLRO.';
+        if (c.status === 'Escalated' && r !== 'mlro') return 'Escalated cases can only be decided by the MLRO.';
+        if ((action === 'approve' || action === 'reject') && a.sanctionsBlocked && r !== 'mlro') return 'Only the MLRO can close a case with a sanctions match.';
+        if (action === 'approve') {
+          if (r === 'analyst' && !user.delegatedAuthority) return 'No delegated approval authority yet. Escalate or ask a senior analyst.';
+          if (a.tier === 'High' && r === 'analyst') return 'High risk approvals are above analyst delegated authority.';
+          if (a.mandatoryEDD.length && user.id === c.createdById) return 'Four eyes rule: the senior approver must be a different person from the analyst who prepared the case.';
+        }
+        if (action === 'reject' && a.tier === 'High' && r === 'analyst') return 'High risk rejections need a senior analyst or the MLRO.';
+        return null;
+      default:
+        return 'Action not permitted.';
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Name matching
+  // ---------------------------------------------------------------------------
+
+  var STOP_WORDS = ['ltd', 'limited', 'llc', 'inc', 'corp', 'corporation', 'plc', 'sa', 'gmbh', 'co', 'the', 'and', 'de', 'da', 'do', 'dos', 'das'];
+
+  function stripAccents(s) {
+    return s.normalize ? s.normalize('NFD').replace(/[̀-ͯ]/g, '') : s;
+  }
+
+  function tokens(name) {
+    return stripAccents(String(name || '').toLowerCase())
+      .replace(/[^a-z0-9 ]+/g, ' ')
+      .split(/\s+/)
+      .filter(function (t) { return t && t.length > 1 && STOP_WORDS.indexOf(t) === -1; });
+  }
+
+  function normalize(name) { return tokens(name).join(' '); }
+  function sortedKey(name) { return tokens(name).slice().sort().join(' '); }
+
+  function jaro(a, b) {
+    if (a === b) return a.length ? 1 : 0;
+    if (!a.length || !b.length) return 0;
+    var range = Math.max(0, Math.floor(Math.max(a.length, b.length) / 2) - 1);
+    var aM = new Array(a.length), bM = new Array(b.length), matches = 0, i, j;
+    for (i = 0; i < a.length; i++) {
+      var lo = Math.max(0, i - range), hi = Math.min(i + range + 1, b.length);
+      for (j = lo; j < hi; j++) {
+        if (!bM[j] && a[i] === b[j]) { aM[i] = bM[j] = true; matches++; break; }
+      }
+    }
+    if (!matches) return 0;
+    var t = 0, k = 0;
+    for (i = 0; i < a.length; i++) {
+      if (!aM[i]) continue;
+      while (!bM[k]) k++;
+      if (a[i] !== b[k]) t++;
+      k++;
+    }
+    return (matches / a.length + matches / b.length + (matches - t / 2) / matches) / 3;
+  }
+
+  function jaroWinkler(a, b) {
+    var j = jaro(a, b), p = 0;
+    for (var i = 0; i < Math.min(4, a.length, b.length) && a[i] === b[i]; i++) p++;
+    return j + p * 0.1 * (1 - j);
+  }
+
+  // Average best match of each token in the shorter name against the longer name.
+  // Handles missing middle names and reordered names.
+  function tokenScore(a, b) {
+    var ta = tokens(a), tb = tokens(b);
+    if (!ta.length || !tb.length) return 0;
+    var shortT = ta.length <= tb.length ? ta : tb, longT = shortT === ta ? tb : ta;
+    var sum = 0;
+    shortT.forEach(function (t) {
+      var best = 0;
+      longT.forEach(function (u) { best = Math.max(best, jaroWinkler(t, u)); });
+      sum += best;
+    });
+    var coverage = shortT.length / longT.length; // penalise very partial names
+    return (sum / shortT.length) * (0.85 + 0.15 * coverage);
+  }
+
+  function nameSimilarity(a, b) {
+    var na = normalize(a), nb = normalize(b);
+    if (!na || !nb) return 0;
+    return Math.max(
+      jaroWinkler(na, nb),
+      jaroWinkler(sortedKey(a), sortedKey(b)),
+      tokenScore(a, b)
+    );
+  }
+
+  // Screen one name (and optional date of birth) against a list.
+  // Returns hits at or above the potential threshold, best first.
+  function screenName(name, dob, list, listType) {
+    var hits = [];
+    (list || []).forEach(function (entry) {
+      var candidates = [entry.name].concat(entry.aliases || []);
+      var best = 0, matchedOn = entry.name;
+      candidates.forEach(function (c) {
+        var s = nameSimilarity(name, c);
+        if (s > best) { best = s; matchedOn = c; }
+      });
+      if (best < THRESHOLDS.potential) return;
+      var dobConflict = !!(dob && entry.dob && dob !== entry.dob);
+      var level = best >= THRESHOLDS.strong && !dobConflict ? 'strong' : 'potential';
+      hits.push({
+        listType: listType,
+        entryId: entry.id,
+        entryName: entry.name,
+        matchedOn: matchedOn,
+        score: Math.round(best * 1000) / 1000,
+        level: level,
+        dobConflict: dobConflict,
+        detail: entry.program || entry.role || '',
+        review: null // { outcome: 'true_match' | 'false_positive', note, by, at }
+      });
+    });
+    return hits.sort(function (x, y) { return y.score - x.score; });
+  }
+
+  // Screen the customer and all UBOs against sanctions and PEP lists.
+  function screenCase(c, lists) {
+    var subjects = [{ role: 'Customer', name: c.name, dob: c.dob }];
+    (c.ubos || []).forEach(function (u) { subjects.push({ role: 'UBO', name: u.name, dob: u.dob }); });
+    var hits = [];
+    subjects.forEach(function (s) {
+      if (!s.name) return;
+      screenName(s.name, s.dob, lists.sanctions, 'Sanctions').forEach(function (h) { h.subject = s.role + ': ' + s.name; hits.push(h); });
+      screenName(s.name, s.dob, lists.peps, 'PEP').forEach(function (h) { h.subject = s.role + ': ' + s.name; hits.push(h); });
+    });
+    return hits;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Risk assessment (POLICY.md section 4)
+  // ---------------------------------------------------------------------------
+
+  function find(arr, key, val) { for (var i = 0; i < arr.length; i++) if (arr[i][key] === val) return arr[i]; return null; }
+
+  function assess(c, hits, lists) {
+    var factors = [], mandatoryEDD = [], cddIssues = [];
+    var hrList = (lists && lists.highRiskCountries) || HIGH_RISK_THIRD_COUNTRIES;
+    hits = hits || [];
+
+    function add(label, points, ref) { factors.push({ label: label, points: points, ref: ref }); }
+
+    var ct = find(CUSTOMER_TYPES, 'id', c.customerType) || CUSTOMER_TYPES[0];
+    add('Customer type: ' + ct.name, ct.points, 'CJA 2010 s.30B');
+
+    var country = find(COUNTRIES, 'code', c.country);
+    if (hrList.indexOf(c.country) !== -1) {
+      add('EU high risk third country: ' + (country ? country.name : c.country), 40, 'CJA 2010 s.38A');
+      mandatoryEDD.push('Established in an EU high risk third country (s.38A)');
+    } else if (country && !country.eea) {
+      add('Non EU or EEA country: ' + country.name, 10, 'CJA 2010 s.30B');
+    } else {
+      add('EU or EEA country' + (country ? ': ' + country.name : ''), 0, 'CJA 2010 s.30B');
+    }
+
+    var sector = find(SECTORS, 'id', c.sector);
+    if (sector && sector.highRisk) add('High risk sector: ' + sector.name, 15, 'CJA 2010 s.30B, Sch. 4');
+
+    // PEP: self declared, or a list hit the analyst confirmed as a true match.
+    var pepConfirmed = hits.some(function (h) { return h.listType === 'PEP' && h.review && h.review.outcome === 'true_match'; });
+    if (c.pepDeclared || pepConfirmed) {
+      add('Politically exposed person' + (c.pepDeclared ? ' (self declared)' : ' (list match confirmed)'), 30, 'CJA 2010 s.37');
+      mandatoryEDD.push('Customer or UBO is a PEP (s.37): senior management approval required');
+    }
+
+    if (c.customerType === 'company' || c.customerType === 'trust') {
+      var ubos = (c.ubos || []).filter(function (u) { return u.name; });
+      if (!ubos.length) {
+        add('No beneficial owner identified', 25, 'CJA 2010 s.33');
+        cddIssues.push('No beneficial owner identified for a corporate customer (s.33)');
+      }
+    }
+
+    var vol = Number(c.monthlyVolume) || 0;
+    if (vol > 250000) add('Expected monthly volume above EUR 250,000', 20, 'CJA 2010 s.30B');
+    else if (vol > 50000) add('Expected monthly volume above EUR 50,000', 10, 'CJA 2010 s.30B');
+
+    if (!c.sourceOfFunds || !String(c.sourceOfFunds).trim()) add('Source of funds not provided', 10, 'CJA 2010 s.35');
+    if (c.adverseMedia) add('Adverse media linked to financial crime', 20, 'CJA 2010 s.39');
+
+    if (!c.idVerified) cddIssues.push('Identity not verified against a reliable independent source (s.33)');
+    if (c.idExpiry && c.createdAt && c.idExpiry < String(c.createdAt).slice(0, 10)) cddIssues.push('Identity document expired (s.33)');
+
+    var score = factors.reduce(function (s, f) { return s + f.points; }, 0);
+    var tier = TIERS.filter(function (t) { return score >= t.min && score <= t.max; })[0].id;
+    if (mandatoryEDD.length) tier = 'High';
+
+    var sanctionsStrong = hits.some(function (h) { return h.listType === 'Sanctions' && (h.level === 'strong' || (h.review && h.review.outcome === 'true_match')); });
+    var pendingHits = hits.filter(function (h) { return !h.review && !(h.listType === 'Sanctions' && h.level === 'strong'); });
+
+    return {
+      score: score,
+      tier: tier,
+      factors: factors,
+      mandatoryEDD: mandatoryEDD,
+      eddRequired: tier === 'High',
+      cddIssues: cddIssues,
+      cddComplete: cddIssues.length === 0,
+      sanctionsBlocked: sanctionsStrong,
+      pendingHits: pendingHits.length,
+      reviewMonths: find(TIERS, 'id', tier).reviewMonths
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Recommendation and allowed decisions (POLICY.md section 9)
+  // ---------------------------------------------------------------------------
+
+  function recommend(a) {
+    if (a.sanctionsBlocked) {
+      return { code: 'BLOCK', text: 'Blocked: sanctions match. Do not onboard, freeze funds and escalate to the MLRO.', allowed: ['reject', 'escalate'] };
+    }
+    if (a.pendingHits > 0) {
+      return { code: 'REVIEW_HITS', text: 'Screening hits need review. Mark each hit as a true match or a false positive before deciding.', allowed: ['escalate', 'request_info'] };
+    }
+    if (!a.cddComplete) {
+      return { code: 'CDD_INCOMPLETE', text: 'CDD incomplete. The relationship cannot be established until identity and ownership are verified (s.33).', allowed: ['request_info', 'reject'] };
+    }
+    if (a.eddRequired) {
+      return { code: 'EDD', text: 'High risk: apply enhanced due diligence. Approval needs EDD completion by a senior analyst or the MLRO' + (a.mandatoryEDD.length ? ', who must be a different person from the case preparer (senior management approval, four eyes).' : '.'), allowed: ['approve', 'reject', 'escalate', 'request_info'] };
+    }
+    return { code: 'STANDARD', text: a.tier + ' risk: standard CDD. Analyst may approve under delegated authority.', allowed: ['approve', 'reject', 'escalate', 'request_info'] };
+  }
+
+  // Validate a decision against policy. Returns an error message or null.
+  function validateDecision(decision, a, opts) {
+    opts = opts || {};
+    var rec = recommend(a);
+    if (rec.allowed.indexOf(decision) === -1) return 'Decision not allowed by policy for this case: ' + rec.text;
+    if (!opts.rationale || opts.rationale.trim().length < 15) return 'A written rationale of at least 15 characters is required.';
+    if (decision === 'approve' && a.eddRequired && !opts.eddCompleted) return 'Confirm that EDD has been completed (source of wealth and funds) before approving a High risk case.';
+    return null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Sanctions CSV import (real EU consolidated list or any CSV with a name column)
+  // ---------------------------------------------------------------------------
+
+  function parseCSVLine(line, sep) {
+    var out = [], cur = '', q = false;
+    for (var i = 0; i < line.length; i++) {
+      var ch = line[i];
+      if (q) {
+        if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+        else if (ch === '"') q = false;
+        else cur += ch;
+      } else if (ch === '"') q = true;
+      else if (ch === sep) { out.push(cur); cur = ''; }
+      else cur += ch;
+    }
+    out.push(cur);
+    return out;
+  }
+
+  function parseSanctionsCSV(text) {
+    var lines = String(text || '').split(/\r?\n/).filter(function (l) { return l.trim(); });
+    if (lines.length < 2) throw new Error('The file has no data rows.');
+    var sep = (lines[0].split(';').length > lines[0].split(',').length) ? ';' : ',';
+    var head = parseCSVLine(lines[0], sep).map(function (h) { return h.toLowerCase().trim(); });
+    function col(re) { for (var i = 0; i < head.length; i++) if (re.test(head[i])) return i; return -1; }
+    var nameIdx = col(/wholename|whole_name|^name$|full ?name|naal_wholename/);
+    if (nameIdx === -1) nameIdx = col(/name/);
+    if (nameIdx === -1) throw new Error('No name column found. Expected a header such as "NameAlias_WholeName" or "name".');
+    var idIdx = col(/logicalid|^id$|entity_id|reference/);
+    var dobIdx = col(/birthdate_birthdate|^birthdate$|dob|date of birth/);
+    var typeIdx = col(/subjecttype|^type$/);
+
+    var byId = {}, order = [];
+    for (var r = 1; r < lines.length; r++) {
+      var cells = parseCSVLine(lines[r], sep);
+      var name = (cells[nameIdx] || '').trim();
+      if (!name) continue;
+      var id = idIdx !== -1 && cells[idIdx] ? 'EU-' + cells[idIdx].trim() : 'CSV-' + r;
+      if (!byId[id]) {
+        byId[id] = { id: id, name: name, aliases: [], dob: '', type: '', program: 'Imported list' };
+        order.push(id);
+      } else if (byId[id].name !== name && byId[id].aliases.indexOf(name) === -1) {
+        byId[id].aliases.push(name);
+      }
+      if (dobIdx !== -1 && cells[dobIdx] && /^\d{4}-\d{2}-\d{2}$/.test(cells[dobIdx].trim())) byId[id].dob = cells[dobIdx].trim();
+      if (typeIdx !== -1 && cells[typeIdx]) byId[id].type = cells[typeIdx].trim();
+    }
+    return order.map(function (k) { return byId[k]; });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Metrics (POLICY.md section 13)
+  // ---------------------------------------------------------------------------
+
+  function metrics(cases) {
+    var m = {
+      total: cases.length,
+      byStatus: { 'Pending review': 0, 'Info requested': 0, 'Escalated': 0, 'Approved': 0, 'Rejected': 0 },
+      byTier: { Low: 0, Medium: 0, High: 0 },
+      eddCases: 0, cddIncomplete: 0, escalated: 0,
+      hits: 0, sanctionsHits: 0, pepHits: 0, reviewedHits: 0, falsePositives: 0, trueMatches: 0,
+      decided: 0, avgHoursToDecision: 0
+    };
+    var totalHours = 0;
+    cases.forEach(function (c) {
+      m.byStatus[c.status] = (m.byStatus[c.status] || 0) + 1;
+      m.byTier[c.assessment.tier]++;
+      if (c.assessment.eddRequired) m.eddCases++;
+      if (!c.assessment.cddComplete) m.cddIncomplete++;
+      if (c.status === 'Escalated' || (c.audit || []).some(function (e) { return e.type === 'escalate'; })) m.escalated++;
+      (c.hits || []).forEach(function (h) {
+        m.hits++;
+        if (h.listType === 'Sanctions') m.sanctionsHits++; else m.pepHits++;
+        if (h.review) {
+          m.reviewedHits++;
+          if (h.review.outcome === 'false_positive') m.falsePositives++; else m.trueMatches++;
+        }
+      });
+      if (c.decidedAt) {
+        m.decided++;
+        totalHours += (new Date(c.decidedAt) - new Date(c.createdAt)) / 36e5;
+      }
+    });
+    m.avgHoursToDecision = m.decided ? Math.round((totalHours / m.decided) * 10) / 10 : 0;
+    m.falsePositiveRate = m.reviewedHits ? Math.round((m.falsePositives / m.reviewedHits) * 1000) / 10 : 0;
+    m.eddRate = m.total ? Math.round((m.eddCases / m.total) * 1000) / 10 : 0;
+    m.escalationRate = m.total ? Math.round((m.escalated / m.total) * 1000) / 10 : 0;
+    return m;
+  }
+
+  var api = {
+    COUNTRIES: COUNTRIES, HIGH_RISK_THIRD_COUNTRIES: HIGH_RISK_THIRD_COUNTRIES, SECTORS: SECTORS,
+    CUSTOMER_TYPES: CUSTOMER_TYPES, SAMPLE_SANCTIONS: SAMPLE_SANCTIONS, SAMPLE_PEPS: SAMPLE_PEPS,
+    THRESHOLDS: THRESHOLDS, TIERS: TIERS, ROLES: ROLES, DEMO_USERS: DEMO_USERS, authorize: authorize,
+    normalize: normalize, jaroWinkler: jaroWinkler, nameSimilarity: nameSimilarity,
+    screenName: screenName, screenCase: screenCase, assess: assess, recommend: recommend,
+    validateDecision: validateDecision, parseSanctionsCSV: parseSanctionsCSV, metrics: metrics
+  };
+
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else root.KYC = api;
+})(this);
+
+</script>
+<script>
+/*
+ * KYC Onboarding and Screening Simulator: user interface
+ * Author: Adriano Huttener
+ */
+(function () {
+  'use strict';
+  var K = window.KYC;
+  var STORE_KEY = 'kyc-sim-v1';
+  var STATUSES = ['Pending review', 'Info requested', 'Escalated', 'Approved', 'Rejected'];
+  var DECISION_STATUS = { approve: 'Approved', reject: 'Rejected', escalate: 'Escalated', request_info: 'Info requested' };
+  var DECISION_LABEL = { approve: 'Approve', reject: 'Reject', escalate: 'Escalate to MLRO', request_info: 'Request information' };
+
+  var state = load();
+  var currentCaseId = null;
+
+  // ---------------------------------------------------------------------------
+  // Persistence (browser storage can be unavailable, so always fall back to memory)
+  // ---------------------------------------------------------------------------
+  function defaults() {
+    return {
+      cases: [], seq: 1000, users: K.DEMO_USERS.map(function (u) { return Object.assign({}, u); }), currentUserId: 'u-analyst', accessLog: [],
+      lists: { sanctions: K.SAMPLE_SANCTIONS.slice(), peps: K.SAMPLE_PEPS.slice(), highRiskCountries: K.HIGH_RISK_THIRD_COUNTRIES.slice(), sanctionsSource: 'Fictional sample list' }
+    };
+  }
+  function load() {
+    try {
+      var raw = window.localStorage.getItem(STORE_KEY);
+      if (raw) { var s = JSON.parse(raw); if (s && s.cases && s.lists && s.users) return s; }
+    } catch (e) { /* storage unavailable */ }
+    return defaults();
+  }
+  function save() {
+    try { window.localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------------------
+  function $(sel, el) { return (el || document).querySelector(sel); }
+  function $all(sel, el) { return Array.prototype.slice.call((el || document).querySelectorAll(sel)); }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function fmtDate(iso) { if (!iso) return ''; var d = new Date(iso); return d.toLocaleDateString('en-IE', { day: '2-digit', month: 'short', year: 'numeric' }); }
+  function fmtTime(iso) { var d = new Date(iso); return d.toLocaleDateString('en-IE', { day: '2-digit', month: 'short' }) + ' ' + d.toLocaleTimeString('en-IE', { hour: '2-digit', minute: '2-digit' }); }
+  function countryName(code) { var c = K.COUNTRIES.filter(function (x) { return x.code === code; })[0]; return c ? c.name : code; }
+  function typeName(id) { var c = K.CUSTOMER_TYPES.filter(function (x) { return x.id === id; })[0]; return c ? c.name : id; }
+  function tierBadge(t) { return '<span class="badge t-' + t + '">' + t + '</span>'; }
+  function statusBadge(s) { return '<span class="badge s-' + s.split(' ')[0] + '">' + esc(s) + '</span>'; }
+  function getCase(id) { return state.cases.filter(function (c) { return c.id === id; })[0]; }
+  function me() { return state.users.filter(function (u) { return u.id === state.currentUserId; })[0]; }
+  function userLabel(u) { return u ? u.name + ' (' + K.ROLES[u.role].name + ')' : 'Unknown'; }
+  function addAudit(c, type, text, at) { c.audit.push({ at: at || new Date().toISOString(), by: userLabel(me()), userId: state.currentUserId, type: type, text: text }); }
+  function logAccess(text, at) { state.accessLog.unshift({ at: at || new Date().toISOString(), user: userLabel(me()), text: text }); state.accessLog = state.accessLog.slice(0, 200); }
+  function can(action, c, extra) { return K.authorize(action, me(), c, extra); }
+
+  // ---------------------------------------------------------------------------
+  // Case lifecycle
+  // ---------------------------------------------------------------------------
+  function createCase(input, at) {
+    state.seq += 1;
+    var c = Object.assign({}, input, {
+      id: 'KYC-' + state.seq,
+      createdAt: at || new Date().toISOString(),
+      status: 'Pending review', audit: [], decidedAt: null, nextReview: null,
+      createdById: state.currentUserId, createdBy: userLabel(me())
+    });
+    c.hits = K.screenCase(c, state.lists);
+    c.assessment = K.assess(c, c.hits, state.lists);
+    addAudit(c, 'create', 'Case created for ' + c.name + ' (' + typeName(c.customerType) + ', ' + countryName(c.country) + ').', c.createdAt);
+    addAudit(c, 'screen', 'Screened customer' + ((c.ubos || []).length ? ' and ' + c.ubos.length + ' beneficial owner(s)' : '') + ' against ' + state.lists.sanctions.length + ' sanctions and ' + state.lists.peps.length + ' PEP entries: ' + c.hits.length + ' hit(s).', c.createdAt);
+    addAudit(c, 'assess', 'Risk score ' + c.assessment.score + ', tier ' + c.assessment.tier + '. Recommendation: ' + K.recommend(c.assessment).text, c.createdAt);
+    state.cases.unshift(c);
+    return c;
+  }
+
+  function recompute(c) { c.assessment = K.assess(c, c.hits, state.lists); }
+
+  function reviewHit(c, idx, outcome, note, at) {
+    var h = c.hits[idx];
+    h.review = { outcome: outcome, note: note, by: userLabel(me()), at: at || new Date().toISOString() };
+    addAudit(c, 'hit', (outcome === 'true_match' ? 'Confirmed TRUE MATCH: ' : 'Cleared as FALSE POSITIVE: ') + h.listType + ' hit on ' + h.entryName + ' (' + h.score + ') for ' + h.subject + '. Note: ' + note, at);
+    var before = c.assessment.tier;
+    recompute(c);
+    if (c.assessment.tier !== before) addAudit(c, 'assess', 'Risk tier changed from ' + before + ' to ' + c.assessment.tier + ' (score ' + c.assessment.score + ').', at);
+  }
+
+  function decide(c, decision, opts, at) {
+    var err = can(decision, c) || K.validateDecision(decision, c.assessment, opts);
+    if (err) return err;
+    at = at || new Date().toISOString();
+    c.status = DECISION_STATUS[decision];
+    var text = DECISION_LABEL[decision] + '. Rationale: ' + opts.rationale.trim();
+    if (opts.eddCompleted) text += ' EDD completed.';
+    if (decision === 'approve' && c.assessment.mandatoryEDD.length) text += ' Senior management approval given by ' + userLabel(me()) + ' (four eyes: case prepared by ' + (c.createdBy || 'another user') + ').';
+    if (decision === 'approve' || decision === 'reject') {
+      c.decidedAt = at;
+      if (decision === 'approve') {
+        var d = new Date(at); d.setMonth(d.getMonth() + c.assessment.reviewMonths);
+        c.nextReview = d.toISOString();
+        text += ' Next periodic review: ' + fmtDate(c.nextReview) + '.';
+      }
+    }
+    if (decision === 'escalate') text += ' Internal escalation only: customer not informed (s.49 tipping off).';
+    addAudit(c, decision, text, at);
+    return null;
+  }
+
+  function rescreen(c) {
+    var old = c.hits || [];
+    c.hits = K.screenCase(c, state.lists);
+    c.hits.forEach(function (h) {
+      var prev = old.filter(function (o) { return o.entryId === h.entryId && o.subject === h.subject && o.review; })[0];
+      if (prev) h.review = prev.review;
+    });
+    recompute(c);
+    addAudit(c, 'screen', 'Re-screened against current lists: ' + c.hits.length + ' hit(s). Risk score ' + c.assessment.score + ', tier ' + c.assessment.tier + '.');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Navigation
+  // ---------------------------------------------------------------------------
+  function show(view) {
+    $all('main > section').forEach(function (s) { s.classList.add('hidden'); });
+    $('#view-' + view).classList.remove('hidden');
+    $all('#nav button').forEach(function (b) { b.classList.toggle('active', b.getAttribute('data-view') === view || (view === 'case' && b.getAttribute('data-view') === 'queue')); });
+    if (view === 'dashboard') renderDashboard();
+    if (view === 'queue') renderQueue();
+    if (view === 'lists') renderLists();
+    if (view === 'new') renderPreview();
+    if (view === 'access') renderAccess();
+    window.scrollTo(0, 0);
+  }
+  $all('#nav button').forEach(function (b) { b.addEventListener('click', function () { show(b.getAttribute('data-view')); }); });
+
+  // ---------------------------------------------------------------------------
+  // Dashboard
+  // ---------------------------------------------------------------------------
+  function bars(el, rows, colorFn) {
+    var max = Math.max.apply(null, rows.map(function (r) { return r[1]; }).concat([1]));
+    el.innerHTML = rows.map(function (r) {
+      return '<div class="bar-row"><span>' + esc(r[0]) + '</span><div class="bar"><span style="width:' + (r[1] / max * 100) + '%;background:' + colorFn(r[0]) + '"></span></div><strong>' + r[1] + '</strong></div>';
+    }).join('');
+  }
+
+  function renderDashboard() {
+    var m = K.metrics(state.cases);
+    var kpis = [
+      ['Total cases', m.total, m.decided + ' decided'],
+      ['Awaiting action', m.byStatus['Pending review'] + m.byStatus['Info requested'], 'pending or info requested'],
+      ['EDD rate', m.eddRate + '%', m.eddCases + ' high risk cases'],
+      ['Escalation rate', m.escalationRate + '%', m.escalated + ' sent to MLRO'],
+      ['False positive rate', m.falsePositiveRate + '%', m.falsePositives + ' of ' + m.reviewedHits + ' reviewed hits'],
+      ['Avg time to decision', m.avgHoursToDecision + ' h', 'creation to approve or reject']
+    ];
+    $('#kpis').innerHTML = kpis.map(function (k) { return '<div class="card kpi"><div class="label">' + k[0] + '</div><div class="value">' + k[1] + '</div><div class="hint">' + k[2] + '</div></div>'; }).join('');
+    var sc = { 'Pending review': '#2563eb', 'Info requested': '#8892a0', 'Escalated': '#9333ea', 'Approved': '#16a34a', 'Rejected': '#dc2626' };
+    bars($('#chart-status'), STATUSES.map(function (s) { return [s, m.byStatus[s] || 0]; }), function (k) { return sc[k]; });
+    var tc = { Low: '#16a34a', Medium: '#d97706', High: '#dc2626' };
+    bars($('#chart-tier'), ['Low', 'Medium', 'High'].map(function (t) { return [t, m.byTier[t]]; }), function (k) { return tc[k]; });
+    bars($('#chart-hits'), [['Sanctions hits', m.sanctionsHits], ['PEP hits', m.pepHits], ['True matches', m.trueMatches], ['False positives', m.falsePositives]], function () { return '#22d3ee'; });
+    bars($('#chart-controls'), [['CDD incomplete', m.cddIncomplete], ['EDD applied', m.eddCases], ['Escalated', m.escalated], ['Rejected', m.byStatus.Rejected]], function () { return '#06b6d4'; });
+  }
+
+  $('#btn-demo').addEventListener('click', function () { seedDemo(); save(); renderDashboard(); $('#dash-msg').textContent = 'Demo cases loaded.'; });
+  // Two step confirmation built into the page (browser dialogs are blocked in some viewers).
+  var resetArmed = null;
+  $('#btn-reset').addEventListener('click', function () {
+    var b = $('#btn-reset');
+    var denied = can('reset_data'); if (denied) { $('#dash-msg').textContent = 'Reset: ' + denied; return; }
+    if (!resetArmed) {
+      b.textContent = 'Click again to delete all cases';
+      b.classList.add('danger');
+      resetArmed = setTimeout(function () { resetArmed = null; b.textContent = 'Reset all data (MLRO only)'; b.classList.remove('danger'); }, 4000);
+      return;
+    }
+    clearTimeout(resetArmed); resetArmed = null;
+    b.textContent = 'Reset all data (MLRO only)'; b.classList.remove('danger');
+    var denied = can('reset_data'); if (denied) { $('#dash-msg').textContent = denied; return; }
+    state = defaults(); save(); $('#export-panel').classList.add('hidden'); renderUserSwitch(); renderDashboard();
+  });
+  $('#btn-export').addEventListener('click', exportCSV);
+
+  function exportCSV() {
+    var head = ['case_id', 'created_at', 'customer', 'type', 'country', 'sector', 'risk_score', 'risk_tier', 'edd_required', 'cdd_complete', 'hits', 'status', 'decided_at', 'next_review', 'audit_trail'];
+    var rows = state.cases.map(function (c) {
+      return [c.id, c.createdAt, c.name, typeName(c.customerType), countryName(c.country), c.sector, c.assessment.score, c.assessment.tier, c.assessment.eddRequired, c.assessment.cddComplete, c.hits.length, c.status, c.decidedAt || '', c.nextReview || '',
+        c.audit.map(function (a) { return a.at + ' [' + a.by + '] ' + a.text; }).join(' | ')];
+    });
+    var csv = [head].concat(rows).map(function (r) { return r.map(function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; }).join(','); }).join('\n');
+    // Show the CSV in the page with Copy and Download, because some viewers block downloads.
+    $('#export-text').value = csv;
+    $('#export-panel').classList.remove('hidden');
+    $('#export-msg').textContent = state.cases.length + ' case(s) exported.';
+  }
+  $('#export-copy').addEventListener('click', function () {
+    var t = $('#export-text');
+    try {
+      navigator.clipboard.writeText(t.value).then(function () { $('#export-msg').textContent = 'Copied to the clipboard.'; },
+        function () { t.select(); $('#export-msg').textContent = 'Select all and copy manually (Ctrl+C).'; });
+    } catch (e) { t.select(); $('#export-msg').textContent = 'Select all and copy manually (Ctrl+C).'; }
+  });
+  $('#export-download').addEventListener('click', function () {
+    try {
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([$('#export-text').value], { type: 'text/csv' }));
+      a.download = 'kyc-cases-export.csv';
+      document.body.appendChild(a); a.click(); a.remove();
+    } catch (e) { $('#export-msg').textContent = 'Download blocked here. Use Copy instead.'; }
+  });
+  $('#export-close').addEventListener('click', function () { $('#export-panel').classList.add('hidden'); });
+
+  // ---------------------------------------------------------------------------
+  // New case form with live preview
+  // ---------------------------------------------------------------------------
+  var form = $('#case-form');
+  $('#f-type').innerHTML = K.CUSTOMER_TYPES.map(function (t) { return '<option value="' + t.id + '">' + t.name + '</option>'; }).join('');
+  $('#f-country').innerHTML = K.COUNTRIES.slice().sort(function (a, b) { return a.name.localeCompare(b.name); }).map(function (c) { return '<option value="' + c.code + '"' + (c.code === 'IE' ? ' selected' : '') + '>' + c.name + '</option>'; }).join('');
+  $('#f-sector').innerHTML = K.SECTORS.map(function (s) { return '<option value="' + s.id + '">' + s.name + (s.highRisk ? ' (higher risk)' : '') + '</option>'; }).join('');
+
+  function addUboRow(u) {
+    u = u || {};
+    var div = document.createElement('div');
+    div.className = 'ubo';
+    div.innerHTML = '<input type="text" class="u-name" placeholder="Beneficial owner name" value="' + esc(u.name || '') + '">' +
+      '<input type="date" class="u-dob" value="' + esc(u.dob || '') + '">' +
+      '<input type="number" class="u-pct" placeholder="%" min="0" max="100" value="' + esc(u.pct || '') + '">' +
+      '<button type="button" class="btn ghost small">Remove</button>';
+    div.querySelector('button').addEventListener('click', function () { div.remove(); renderPreview(); });
+    $('#ubo-rows').appendChild(div);
+  }
+  $('#add-ubo').addEventListener('click', function () { addUboRow(); });
+
+  function readForm() {
+    var f = form.elements;
+    var corp = f.customerType.value === 'company' || f.customerType.value === 'trust';
+    return {
+      name: f.name.value.trim(), customerType: f.customerType.value, country: f.country.value, dob: f.dob.value,
+      sector: f.sector.value, idExpiry: f.idExpiry.value, idVerified: f.idVerified.checked,
+      monthlyVolume: Number(f.monthlyVolume.value) || 0, sourceOfFunds: f.sourceOfFunds.value.trim(),
+      pepDeclared: f.pepDeclared.checked, adverseMedia: f.adverseMedia.checked,
+      ubos: corp ? $all('#ubo-rows .ubo').map(function (r) { return { name: r.querySelector('.u-name').value.trim(), dob: r.querySelector('.u-dob').value, pct: r.querySelector('.u-pct').value }; }).filter(function (u) { return u.name; }) : [],
+      createdAt: new Date().toISOString()
+    };
+  }
+
+  function syncFormType() {
+    var corp = form.elements.customerType.value === 'company' || form.elements.customerType.value === 'trust';
+    $('#ubo-block').classList.toggle('hidden', !corp);
+    $('#lbl-dob').textContent = corp ? 'Date of incorporation' : 'Date of birth';
+    if (corp && !$all('#ubo-rows .ubo').length) addUboRow();
+  }
+
+  function factorTable(a) {
+    return '<table><tbody>' + a.factors.map(function (f) {
+      return '<tr><td>' + esc(f.label) + '<div class="ref">' + esc(f.ref) + '</div></td><td style="text-align:right;font-weight:700">+' + f.points + '</td></tr>';
+    }).join('') + '</tbody></table>';
+  }
+
+  function renderPreview() {
+    var input = readForm();
+    if (!input.name) { $('#preview-body').innerHTML = '<span class="muted">Enter a name to see the risk score and screening result.</span>'; return; }
+    var hits = K.screenCase(input, state.lists);
+    var a = K.assess(input, hits, state.lists);
+    var rec = K.recommend(a);
+    $('#preview-body').innerHTML =
+      '<div style="display:flex;align-items:center;gap:12px"><span class="score">' + a.score + '</span>' + tierBadge(a.tier) + '</div>' +
+      '<div class="rec ' + rec.code + '">' + esc(rec.text) + '</div>' +
+      (hits.length ? '<p><strong>' + hits.length + ' screening hit(s)</strong> will need review.</p>' : '<p class="muted">No sanctions or PEP hits.</p>') +
+      (a.cddIssues.length ? '<p class="err">' + a.cddIssues.map(esc).join('<br>') + '</p>' : '') +
+      factorTable(a);
+  }
+
+  form.addEventListener('input', function (e) { if (e.target.name === 'customerType') syncFormType(); renderPreview(); });
+  form.addEventListener('change', function (e) { if (e.target.name === 'customerType') syncFormType(); renderPreview(); });
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var input = readForm();
+    if (!input.name) { $('#form-msg').innerHTML = '<div class="err">Enter the full legal name.</div>'; return; }
+    var denied = can('create_case'); if (denied) { $('#form-msg').innerHTML = '<div class="err">' + esc(denied) + '</div>'; return; }
+    var c = createCase(input);
+    save();
+    form.reset(); $('#ubo-rows').innerHTML = ''; syncFormType();
+    $('#form-msg').innerHTML = '';
+    openCase(c.id);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Queue
+  // ---------------------------------------------------------------------------
+  $('#q-status').innerHTML += STATUSES.map(function (s) { return '<option>' + s + '</option>'; }).join('');
+  ['#q-search', '#q-status', '#q-tier'].forEach(function (s) { $(s).addEventListener('input', renderQueue); });
+
+  function renderQueue() {
+    var q = $('#q-search').value.toLowerCase(), st = $('#q-status').value, tr = $('#q-tier').value;
+    var list = state.cases.filter(function (c) {
+      return (!q || c.name.toLowerCase().indexOf(q) !== -1 || c.id.toLowerCase().indexOf(q) !== -1) && (!st || c.status === st) && (!tr || c.assessment.tier === tr);
+    });
+    $('#q-body').innerHTML = list.length ? list.map(function (c) {
+      var open = c.hits.filter(function (h) { return !h.review; }).length;
+      return '<tr class="click" data-id="' + c.id + '"><td><strong>' + c.id + '</strong></td><td>' + esc(c.name) + '</td><td>' + typeName(c.customerType) + '</td><td>' + esc(countryName(c.country)) + '</td><td>' + tierBadge(c.assessment.tier) + ' <span class="muted">' + c.assessment.score + '</span></td><td>' + c.hits.length + (open ? ' <span class="muted">(' + open + ' open)</span>' : '') + '</td><td>' + statusBadge(c.status) + '</td><td>' + fmtDate(c.createdAt) + '</td></tr>';
+    }).join('') : '<tr><td colspan="8" class="muted">No cases yet. Create one or load the demo cases from the dashboard.</td></tr>';
+    $all('#q-body tr.click').forEach(function (r) { r.addEventListener('click', function () { openCase(r.getAttribute('data-id')); }); });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Case detail
+  // ---------------------------------------------------------------------------
+  function openCase(id) { currentCaseId = id; renderCase(); show('case'); }
+
+  function renderCase() {
+    var c = getCase(currentCaseId);
+    if (!c) return show('queue');
+    var a = c.assessment, rec = K.recommend(a);
+    var closed = c.status === 'Approved' || c.status === 'Rejected';
+    var el = $('#view-case');
+
+    var hitsHtml = c.hits.length ? c.hits.map(function (h, i) {
+      var badge = h.review ? (h.review.outcome === 'true_match' ? '<span class="badge h-true">True match</span>' : '<span class="badge h-cleared">False positive</span>') : '<span class="badge h-' + h.level + '">' + (h.level === 'strong' ? 'Strong match' : 'Potential match') + '</span>';
+      var controls = '';
+      if (!h.review && !closed && me().role === 'auditor') {
+        controls = '<p class="muted" style="margin:6px 0 0">Read only access.</p>';
+      } else if (!h.review && !closed) {
+        if (h.listType === 'Sanctions' && h.level === 'strong') {
+          controls = '<p class="muted" style="margin:6px 0 0">Strong sanctions match: the analyst cannot clear this hit. Reject and escalate to the MLRO.</p>';
+        } else {
+          controls = '<div style="margin-top:8px"><input type="text" class="hit-note" data-i="' + i + '" placeholder="Reason, e.g. different date of birth and nationality"><div class="toolbar" style="margin:6px 0 0"><button class="btn small ghost hit-btn" data-i="' + i + '" data-o="false_positive">Clear as false positive</button><button class="btn small danger hit-btn" data-i="' + i + '" data-o="true_match">Confirm true match</button></div><div class="err" id="hit-msg-' + i + '"></div></div>';
+        }
+      }
+      return '<div class="hit"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><div><strong>' + esc(h.listType) + ':</strong> ' + esc(h.entryName) + ' <span class="muted">(' + esc(h.entryId) + ')</span><br><span class="muted">' + esc(h.subject) + ' · matched on "' + esc(h.matchedOn) + '" · score ' + h.score + (h.dobConflict ? ' · date of birth differs' : '') + '</span><br><span class="muted">' + esc(h.detail) + '</span></div><div>' + badge + '</div></div>' +
+        (h.review ? '<div class="muted" style="margin-top:6px">Reviewed by ' + esc(h.review.by) + ', ' + fmtTime(h.review.at) + ': ' + esc(h.review.note) + '</div>' : '') + controls + '</div>';
+    }).join('') : '<p class="muted">No sanctions or PEP hits.</p>';
+
+    var decisionHtml = closed ? '<p>Case closed: ' + statusBadge(c.status) + (c.nextReview ? ' Next periodic review on <strong>' + fmtDate(c.nextReview) + '</strong>.' : '') + '</p>' :
+      '<p class="muted">Acting as <strong>' + esc(userLabel(me())) + '</strong>' + (me().role === 'analyst' ? (me().delegatedAuthority ? ', delegated authority for Low and Medium risk' : ', no delegated approval authority') : '') + '. Case prepared by ' + esc(c.createdBy || 'unknown') + '.</p>' +
+      (a.eddRequired ? '<label class="check"><input type="checkbox" id="d-edd"> EDD completed: source of wealth and source of funds established and documented</label>' : '') +
+      (a.mandatoryEDD.length ? '<p class="muted" style="font-size:12.5px">Senior management approval: approving this case records your sign off. It must be a senior analyst or the MLRO who did not prepare the case.</p>' : '') +
+      '<div class="field"><label>Rationale</label><textarea id="d-rationale" placeholder="Explain the decision and the evidence relied on"></textarea></div>' +
+      '<div class="toolbar">' + ['approve', 'request_info', 'escalate', 'reject'].map(function (d) {
+        var why = rec.allowed.indexOf(d) === -1 ? 'Not allowed by policy for this case.' : can(d, c);
+        return '<button class="btn ' + (d === 'reject' ? 'danger' : d === 'approve' ? '' : 'ghost') + ' d-btn" data-d="' + d + '"' + (why ? ' disabled title="' + esc(why) + '"' : '') + '>' + DECISION_LABEL[d] + '</button>';
+      }).join('') + '</div>' + deniedList(c, rec) + '<div id="d-msg"></div>';
+
+    function deniedList(c, rec) {
+      var items = ['approve', 'request_info', 'escalate', 'reject'].map(function (d) {
+        if (rec.allowed.indexOf(d) === -1) return null;
+        var why = can(d, c); return why ? '<li><strong>' + DECISION_LABEL[d] + ':</strong> ' + esc(why) + '</li>' : null;
+      }).filter(Boolean);
+      return items.length ? '<ul class="muted" style="font-size:12.5px;margin:4px 0 0;padding-left:18px">' + items.join('') + '</ul>' : '';
+    }
+    var ubos = (c.ubos || []).length ? '<p><strong>Beneficial owners:</strong> ' + c.ubos.map(function (u) { return esc(u.name) + (u.pct ? ' (' + esc(u.pct) + '%)' : ''); }).join(', ') + '</p>' : '';
+
+    el.innerHTML =
+      '<span class="back" id="back">&larr; Back to queue</span>' +
+      '<div class="toolbar"><h2 style="margin:0">' + c.id + ': ' + esc(c.name) + '</h2>' + statusBadge(c.status) + tierBadge(a.tier) + '<span style="margin-left:auto"></span>' + (closed ? '' : '<button class="btn ghost small" id="rescreen">Re-screen against current lists</button>') + '</div>' +
+      '<div class="rec ' + rec.code + '"><strong>Recommendation:</strong> ' + esc(rec.text) + '</div>' +
+      '<div class="grid two">' +
+        '<div class="card"><h3>Customer profile</h3>' +
+          '<p>' + typeName(c.customerType) + ' · ' + esc(countryName(c.country)) + ' · ' + esc((K.SECTORS.filter(function (s) { return s.id === c.sector; })[0] || {}).name || '') + '</p>' +
+          '<p class="muted">' + (c.dob ? ((c.customerType === 'company' || c.customerType === 'trust') ? 'Incorporated: ' : 'Date of birth: ') + esc(c.dob) + ' · ' : '') + 'Monthly volume: EUR ' + Number(c.monthlyVolume || 0).toLocaleString('en-IE') + ' · Source of funds: ' + esc(c.sourceOfFunds || 'not provided') + '</p>' + ubos +
+          '<p>Identity verified: <strong>' + (c.idVerified ? 'Yes' : 'No') + '</strong>' + (c.idExpiry ? ' · ID expiry ' + esc(c.idExpiry) : '') + ' · PEP declared: <strong>' + (c.pepDeclared ? 'Yes' : 'No') + '</strong></p>' +
+          (a.cddIssues.length ? '<p class="err">CDD incomplete:<br>' + a.cddIssues.map(esc).join('<br>') + '</p>' : '<p class="ok">CDD complete</p>') +
+          (a.mandatoryEDD.length ? '<p class="err">Mandatory EDD:<br>' + a.mandatoryEDD.map(esc).join('<br>') + '</p>' : '') +
+        '</div>' +
+        '<div class="card"><h3>Risk assessment</h3><div style="display:flex;align-items:center;gap:12px;margin-bottom:6px"><span class="score">' + a.score + '</span>' + tierBadge(a.tier) + '<span class="muted">Review every ' + a.reviewMonths + ' months</span></div>' + factorTable(a) + '</div>' +
+        '<div class="card"><h3>Sanctions and PEP screening</h3>' + hitsHtml + '</div>' +
+        '<div class="card"><h3>Decision</h3>' + decisionHtml + '</div>' +
+      '</div>' +
+      '<div class="card" style="margin-top:14px"><h3>Audit trail (append only, retained 5 years under s.55)</h3><ol class="audit">' +
+        c.audit.slice().reverse().map(function (e) { return '<li><time>' + fmtTime(e.at) + '</time><strong>' + esc(e.by) + ':</strong> ' + esc(e.text) + '</li>'; }).join('') +
+      '</ol></div>';
+
+    $('#back').addEventListener('click', function () { show('queue'); });
+    var rs = $('#rescreen'); if (rs) rs.addEventListener('click', function () { if (can('rescreen', c)) return; rescreen(c); save(); renderCase(); });
+    $all('.hit-btn', el).forEach(function (b) {
+      b.addEventListener('click', function () {
+        var i = Number(b.getAttribute('data-i')), note = $('.hit-note[data-i="' + i + '"]', el).value.trim();
+        if (note.length < 10) { $('#hit-msg-' + i).textContent = 'Record the reason for this outcome (at least 10 characters).'; return; }
+        var denied = can('review_hit', c, { hit: c.hits[i], outcome: b.getAttribute('data-o') });
+        if (denied) { $('#hit-msg-' + i).textContent = denied; return; }
+        reviewHit(c, i, b.getAttribute('data-o'), note); save(); renderCase();
+      });
+    });
+    $all('.d-btn', el).forEach(function (b) {
+      b.addEventListener('click', function () {
+        var err = decide(c, b.getAttribute('data-d'), {
+          rationale: $('#d-rationale').value,
+          eddCompleted: $('#d-edd') ? $('#d-edd').checked : false
+        });
+        if (err) { $('#d-msg').innerHTML = '<div class="err">' + esc(err) + '</div>'; return; }
+        save(); renderCase();
+      });
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Watchlists
+  // ---------------------------------------------------------------------------
+  function renderLists() {
+    var s = state.lists.sanctions;
+    $('#sanc-info').textContent = s.length + ' entries loaded. Source: ' + state.lists.sanctionsSource + '.';
+    $('#sanc-body').innerHTML = s.slice(0, 300).map(function (e) { return '<tr><td>' + esc(e.id) + '</td><td>' + esc(e.name) + (e.aliases && e.aliases.length ? '<br><span class="muted">' + esc(e.aliases.join('; ')) + '</span>' : '') + '</td><td>' + esc(e.dob || '') + '</td></tr>'; }).join('') + (s.length > 300 ? '<tr><td colspan="3" class="muted">Showing the first 300 entries.</td></tr>' : '');
+    $('#pep-body').innerHTML = state.lists.peps.map(function (p) { return '<tr><td>' + esc(p.name) + '</td><td>' + esc(p.role) + '</td></tr>'; }).join('');
+    $('#hr-countries').innerHTML = K.COUNTRIES.filter(function (c) { return !c.eea; }).map(function (c) {
+      return '<span class="pill' + (state.lists.highRiskCountries.indexOf(c.code) !== -1 ? ' on' : '') + '" data-c="' + c.code + '">' + esc(c.name) + '</span>';
+    }).join('');
+    $all('#hr-countries .pill').forEach(function (p) {
+      p.addEventListener('click', function () {
+        var denied = can('manage_lists'); if (denied) { $('#sanc-msg').innerHTML = '<div class="err">High risk countries: ' + esc(denied) + '</div>'; return; }
+        var code = p.getAttribute('data-c'), l = state.lists.highRiskCountries, i = l.indexOf(code);
+        if (i === -1) l.push(code); else l.splice(i, 1);
+        logAccess((i === -1 ? 'Added ' : 'Removed ') + code + (i === -1 ? ' to' : ' from') + ' the high risk third country list.');
+        save(); renderLists();
+      });
+    });
+  }
+
+  $('#sanc-file').addEventListener('change', function (e) {
+    var file = e.target.files[0]; if (!file) return;
+    var denied = can('manage_lists'); if (denied) { $('#sanc-msg').innerHTML = '<div class="err">' + esc(denied) + '</div>'; e.target.value = ''; return; }
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        var entries = K.parseSanctionsCSV(reader.result);
+        state.lists.sanctions = entries;
+        state.lists.sanctionsSource = file.name + ' (imported ' + fmtDate(new Date().toISOString()) + ')';
+        logAccess('Imported sanctions list ' + file.name + ' (' + entries.length + ' entries).');
+        save(); renderLists();
+        $('#sanc-msg').innerHTML = '<div class="ok">Imported ' + entries.length + ' entries. Use "Re-screen" on open cases to apply the new list.</div>';
+      } catch (err) { $('#sanc-msg').innerHTML = '<div class="err">' + esc(err.message) + '</div>'; }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  });
+  $('#sanc-restore').addEventListener('click', function () {
+    var denied = can('manage_lists'); if (denied) { $('#sanc-msg').innerHTML = '<div class="err">' + esc(denied) + '</div>'; return; }
+    logAccess('Restored the fictional sample sanctions list.');
+    state.lists.sanctions = K.SAMPLE_SANCTIONS.slice(); state.lists.sanctionsSource = 'Fictional sample list';
+    save(); renderLists(); $('#sanc-msg').innerHTML = '<div class="ok">Sample list restored.</div>';
+  });
+
+  // ---------------------------------------------------------------------------
+  // Access control (IAM): user switcher, permission matrix, access log
+  // ---------------------------------------------------------------------------
+  function renderUserSwitch() {
+    $('#user-switch').innerHTML = state.users.map(function (u) { return '<option value="' + u.id + '"' + (u.id === state.currentUserId ? ' selected' : '') + '>' + esc(userLabel(u)) + '</option>'; }).join('');
+  }
+  $('#user-switch').addEventListener('change', function (e) {
+    logAccess('Signed out.');
+    state.currentUserId = e.target.value;
+    logAccess('Signed in (simulated single sign on).');
+    save();
+    var visible = $all('main > section').filter(function (s) { return !s.classList.contains('hidden'); })[0];
+    var view = visible ? visible.id.replace('view-', '') : 'dashboard';
+    if (view === 'case') renderCase(); else show(view);
+  });
+
+  var MATRIX = [
+    ['Create cases and re-screen', 'create_case'],
+    ['Clear a screening hit as false positive', 'review_fp'],
+    ['Confirm a sanctions true match', 'review_true'],
+    ['Approve Low or Medium risk (delegated authority)', 'approve_low'],
+    ['Approve High risk after EDD', 'approve_high'],
+    ['Senior management approval, PEP and high risk country (four eyes)', 'approve_edd'],
+    ['Decide escalated cases and sanctions matches', 'mlro_case'],
+    ['Manage watchlists and high risk countries', 'manage_lists'],
+    ['Grant or revoke delegated authority', 'manage_users'],
+    ['View cases, metrics, audit trail and access log', 'view']
+  ];
+  function matrixCell(key, u) {
+    var fake = function (extra) { return Object.assign({ status: 'Pending review', createdById: 'someone-else', assessment: { tier: 'Low', mandatoryEDD: [], sanctionsBlocked: false } }, extra || {}); };
+    var r;
+    switch (key) {
+      case 'create_case': r = K.authorize('create_case', u); break;
+      case 'review_fp': r = K.authorize('review_hit', u, null, { hit: { listType: 'Sanctions' }, outcome: 'false_positive' }); break;
+      case 'review_true': r = K.authorize('review_hit', u, null, { hit: { listType: 'Sanctions' }, outcome: 'true_match' }); break;
+      case 'approve_low': r = K.authorize('approve', u, fake()); break;
+      case 'approve_high': r = K.authorize('approve', u, fake({ assessment: { tier: 'High', mandatoryEDD: [], sanctionsBlocked: false } })); break;
+      case 'approve_edd': r = K.authorize('approve', u, fake({ assessment: { tier: 'High', mandatoryEDD: ['PEP'], sanctionsBlocked: false } })); break;
+      case 'mlro_case': r = K.authorize('reject', u, fake({ status: 'Escalated' })); break;
+      case 'manage_lists': r = K.authorize('manage_lists', u); break;
+      case 'manage_users': r = K.authorize('manage_users', u); break;
+      case 'view': r = null; break;
+    }
+    return r ? '<span class="muted" title="' + esc(r) + '">No</span>' : '<strong style="color:var(--low)">Yes</strong>';
+  }
+
+  function renderAccess() {
+    var u = me();
+    $('#acc-me').innerHTML = 'Signed in as <strong>' + esc(userLabel(u)) + '</strong>. ' + esc(K.ROLES[u.role].summary);
+    $('#acc-users').innerHTML = state.users.map(function (x) {
+      var canManage = !can('manage_users') && x.role === 'analyst';
+      return '<tr><td>' + esc(x.name) + (x.id === u.id ? ' <span class="muted">(you)</span>' : '') + '</td><td>' + esc(K.ROLES[x.role].name) + '</td><td>' +
+        (x.role === 'analyst' ? (x.delegatedAuthority ? 'Granted' : 'Not granted') : (x.role === 'auditor' ? 'None (read only)' : 'Full for role')) +
+        (canManage ? ' <button class="btn ghost small da-btn" data-u="' + x.id + '">' + (x.delegatedAuthority ? 'Revoke' : 'Grant') + '</button>' : '') + '</td></tr>';
+    }).join('');
+    $all('.da-btn').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var target = state.users.filter(function (x) { return x.id === b.getAttribute('data-u'); })[0];
+        target.delegatedAuthority = !target.delegatedAuthority;
+        logAccess((target.delegatedAuthority ? 'Granted' : 'Revoked') + ' delegated approval authority for ' + target.name + '.');
+        save(); renderAccess();
+      });
+    });
+    $('#acc-matrix-head').innerHTML = '<tr><th>Permission</th>' + state.users.map(function (x) { return '<th>' + esc(x.name) + '<br><span style="text-transform:none">' + esc(K.ROLES[x.role].name) + '</span></th>'; }).join('') + '</tr>';
+    $('#acc-matrix').innerHTML = MATRIX.map(function (m) { return '<tr><td>' + m[0] + '</td>' + state.users.map(function (x) { return '<td>' + matrixCell(m[1], x) + '</td>'; }).join('') + '</tr>'; }).join('');
+    $('#acc-log').innerHTML = state.accessLog.length ? state.accessLog.slice(0, 60).map(function (e) { return '<li><time>' + fmtTime(e.at) + '</time><strong>' + esc(e.user) + ':</strong> ' + esc(e.text) + '</li>'; }).join('') : '<li class="muted">No access events yet. Switch user in the header to generate sign in events.</li>';
+  }
+
+  // ---------------------------------------------------------------------------
+  // Demo data: realistic mix of outcomes for the metrics dashboard
+  // ---------------------------------------------------------------------------
+  function seedDemo() {
+    var now = Date.now();
+    var keepUser = state.currentUserId;
+    function chk(err) { if (err && window.console) console.error('Demo data rule violation: ' + err); }
+    function as(uid, fn) { var prev = state.currentUserId; state.currentUserId = uid; fn(); state.currentUserId = prev; }
+    var specs = [
+      { d: 21, input: { name: 'Siobhan Kelly', customerType: 'individual', country: 'IE', dob: '1990-07-15', sector: 'employee', idVerified: true, idExpiry: '2030-01-01', monthlyVolume: 3000, sourceOfFunds: 'Salary' },
+        act: function (c, t) { decide(c, 'approve', { rationale: 'Low risk retail customer, identity verified with passport, salary income consistent with expected activity.' }, t(3)); } },
+      { d: 20, input: { name: 'Bruno Carvalho Lima', customerType: 'soletrader', country: 'PT', dob: '1987-02-10', sector: 'hospitality', idVerified: true, idExpiry: '2031-05-01', monthlyVolume: 20000, sourceOfFunds: 'Restaurant revenue' },
+        act: function (c, t) { decide(c, 'approve', { rationale: 'Sole trader in hospitality, revenue in line with business size. Standard CDD completed.' }, t(6)); } },
+      { d: 19, input: { name: 'Greenfield Software Ltd', customerType: 'company', country: 'IE', dob: '2015-04-01', sector: 'tech', idVerified: true, monthlyVolume: 120000, sourceOfFunds: 'SaaS subscription revenue', ubos: [{ name: 'Ciara Byrne', dob: '1984-03-03', pct: '60' }, { name: 'Tom Walsh', dob: '1982-09-09', pct: '40' }] },
+        act: function (c, t) { decide(c, 'approve', { rationale: 'CRO extract verified, both beneficial owners identified and verified. Volume consistent with audited accounts.' }, t(20)); } },
+      { d: 18, input: { name: 'Marko Belandi Ferrante', customerType: 'individual', country: 'AE', dob: '1968-03-14', sector: 'metals', idVerified: true, idExpiry: '2029-01-01', monthlyVolume: 400000, sourceOfFunds: 'Trading' },
+        act: function (c, t) { as('u-analyst', function () { chk(decide(c, 'escalate', { rationale: 'Strong sanctions match on name variant and identical date of birth. Escalated to MLRO, funds not released.' }, t(1))); }); as('u-mlro', function () { chk(decide(c, 'reject', { rationale: 'MLRO confirmed the match. Relationship refused and the report handled by the MLRO.' }, t(5))); }); } },
+      { d: 17, input: { name: 'Anna Grimes', customerType: 'individual', country: 'GB', dob: '1995-12-01', sector: 'professional', idVerified: true, idExpiry: '2032-01-01', monthlyVolume: 6000, sourceOfFunds: 'Consulting fees' },
+        act: function (c, t) { c.hits.forEach(function (h, i) { reviewHit(c, i, 'false_positive', 'Different full name, date of birth (1995 vs 1981) and nationality.', t(2)); }); decide(c, 'approve', { rationale: 'Screening hit cleared as a false positive. Non EU customer with low expected volume.' }, t(4)); } },
+      { d: 15, input: { name: 'Helena Marchetti', customerType: 'individual', country: 'IT', dob: '1970-04-12', sector: 'employee', idVerified: true, idExpiry: '2030-06-01', monthlyVolume: 15000, sourceOfFunds: 'Ministerial salary and property income', pepDeclared: true },
+        act: function (c, t) { as('u-analyst', function () { c.hits.forEach(function (h, i) { reviewHit(c, i, 'true_match', 'Customer confirmed as the Minister of Finance in the PEP list. Self declaration matches.', t(2)); }); }); as('u-senior', function () { chk(decide(c, 'approve', { rationale: 'PEP relationship approved after EDD. Source of wealth evidenced by public asset declarations and payslips.', eddCompleted: true }, t(52))); }); } },
+      { d: 13, input: { name: 'Coinbridge Exchange Ltd', customerType: 'company', country: 'MT', dob: '2019-01-01', sector: 'crypto', idVerified: true, monthlyVolume: 900000, sourceOfFunds: 'Exchange fees', ubos: [] },
+        act: function (c, t) { decide(c, 'request_info', { rationale: 'No beneficial owner disclosed. Requested shareholder register and ownership chart.' }, t(3)); } },
+      { d: 11, input: { name: 'Farid Rahimi', customerType: 'individual', country: 'IR', dob: '1979-05-05', sector: 'logistics', idVerified: true, idExpiry: '2028-01-01', monthlyVolume: 30000, sourceOfFunds: 'Freight business' },
+        act: function (c, t) { decide(c, 'escalate', { rationale: 'High risk third country customer. Escalated to MLRO for EDD scope and senior approval decision.' }, t(6)); } },
+      { d: 9, input: { name: 'Nordlys Trading AS', customerType: 'company', country: 'NO', dob: '2011-03-03', sector: 'retail', idVerified: true, monthlyVolume: 60000, sourceOfFunds: 'Wholesale revenue', ubos: [{ name: 'Erik Solberg', dob: '1975-01-20', pct: '100' }] },
+        act: function (c, t) { decide(c, 'approve', { rationale: 'EEA company, single verified beneficial owner, activity consistent with trade.' }, t(9)); } },
+      { d: 7, by: 'u-trainee', input: { name: 'Mariana Souza Costa', customerType: 'individual', country: 'BR', dob: '1992-10-10', sector: 'employee', idVerified: false, monthlyVolume: 2500, sourceOfFunds: '' },
+        act: function (c, t) { as('u-trainee', function () { chk(decide(c, 'request_info', { rationale: 'Passport image unreadable and no source of funds. Requested new document and payslip.' }, t(1))); }); } },
+      { d: 5, input: { name: 'Lucky Spin Gaming Ltd', customerType: 'company', country: 'CY', dob: '2018-08-08', sector: 'gambling', idVerified: true, monthlyVolume: 300000, sourceOfFunds: 'Gaming revenue', adverseMedia: true, ubos: [{ name: 'Andreas Georgiou', dob: '1980-02-02', pct: '70' }] },
+        act: function (c, t) { as('u-senior', function () { chk(decide(c, 'reject', { rationale: 'High risk sector with adverse media on licence breaches. Outside the firm risk appetite.' }, t(30))); }); } },
+      { d: 3, input: { name: 'Kestrel Maritime Holdings Limited', customerType: 'company', country: 'CY', dob: '2010-01-01', sector: 'logistics', idVerified: true, monthlyVolume: 500000, sourceOfFunds: 'Shipping charters', ubos: [{ name: 'Orlan Vexby', dob: '1975-11-02', pct: '100' }] },
+        act: function (c, t) { decide(c, 'escalate', { rationale: 'Entity and its beneficial owner both match the sanctions list. Escalated to MLRO immediately.' }, t(1)); } },
+      { d: 2, by: 'u-trainee', input: { name: 'Aoife Brennan', customerType: 'individual', country: 'IE', dob: '1988-06-06', sector: 'professional', idVerified: true, idExpiry: '2033-01-01', monthlyVolume: 8000, sourceOfFunds: 'Salary' }, act: null },
+      { d: 1, input: { name: 'Ferrante Marco', customerType: 'individual', country: 'IT', dob: '1991-09-09', sector: 'retail', idVerified: true, idExpiry: '2031-01-01', monthlyVolume: 4000, sourceOfFunds: 'Shop revenue' }, act: null },
+      { d: 0, input: { name: 'Valdoria Infrastructure Fund', customerType: 'trust', country: 'CH', dob: '2020-01-01', sector: 'realestate', idVerified: true, monthlyVolume: 750000, sourceOfFunds: 'Investor capital', ubos: [{ name: 'Rui Sena', dob: '1959-12-19', pct: '35' }, { name: 'Pedro Nunes', dob: '1970-07-07', pct: '30' }] }, act: null }
+    ];
+    specs.forEach(function (s, i) {
+      var cd = new Date(now - s.d * 864e5); cd.setHours(9 + (i % 7), 15 * (i % 4), 0, 0);
+      if (cd.getTime() > now) cd = new Date(now - 36e5);
+      var created = cd.toISOString();
+      var c;
+      as(s.by || 'u-analyst', function () { c = createCase(Object.assign({ pepDeclared: false, adverseMedia: false, ubos: [] }, s.input, { createdAt: created }), created); });
+      if (s.act) as('u-analyst', function () { s.act(c, function (h) { return new Date(new Date(created).getTime() + h * 36e5).toISOString(); }); });
+    });
+    state.currentUserId = keepUser;
+  }
+
+  // Initial render
+  renderUserSwitch();
+  syncFormType();
+  renderDashboard();
+})();
+
+</script>
+</body>
+</html>
