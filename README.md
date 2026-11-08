@@ -1,6 +1,6 @@
 ![KYC / IAM: Know Your Customer and Identity Access Management](docs/banner.jpg)
 
-# KYC Onboarding and Screening Simulator
+# KYC / IAM Simulator
 
 **Live demo:** https://cybersecinfo.com/kyc/
 
