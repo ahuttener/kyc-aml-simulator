@@ -120,6 +120,7 @@
       case 'start_review':
       case 'raise_exception':
       case 'close_exception':
+      case 'record_red_flag':
         return null;
       case 'decide_exception':
         if (r !== 'senior' && r !== 'mlro') return 'Exceptions are approved by a senior analyst or the MLRO.';
@@ -150,6 +151,7 @@
         if (action === 'approve') {
           if (r === 'analyst' && !user.delegatedAuthority) return 'No delegated approval authority yet. Escalate or ask a senior analyst.';
           if (a.tier === 'High' && r === 'analyst') return 'High risk approvals are above analyst delegated authority.';
+          if (a.redFlags && a.redFlags.length && r === 'analyst') return 'Cases with red flags are approved by a senior analyst or the MLRO.';
           if (a.mandatoryEDD.length && user.id === c.createdById) return 'Four eyes rule: the senior approver must be a different person from the analyst who prepared the case.';
           if (a.mandatoryEDD.length && c.openReview && user.id === c.openReview.startedById) return 'Four eyes rule: the approver must be a different person from the one who carried out the review.';
         }
@@ -333,6 +335,22 @@
     if (c.idExpiry && asOf && c.idExpiry < asOf) cddIssues.push('Identity document expired (s.33)');
     // Business verification: only evaluated when the field was captured (older cases have no value).
     if (c.registryVerified === false && c.customerType !== 'individual') cddIssues.push('Business registration not verified against the official register (s.33)');
+    // Proof of address: only evaluated when the field was captured (older cases and companies have no value).
+    if (c.addressVerified === false) cddIssues.push('Address not verified with an acceptable proof of address (s.33)');
+    if (c.addressVerified === true) {
+      if (!isRealDate(c.addressDocDate)) cddIssues.push('Proof of address date not recorded (s.33)');
+      else if (asOf && c.addressDocDate > asOf) cddIssues.push('Proof of address is dated in the future (s.33)');
+      else if (asOf && c.addressDocDate < monthsBefore(asOf, ADDRESS_PROOF_MAX_MONTHS)) cddIssues.push('Proof of address older than ' + ADDRESS_PROOF_MAX_MONTHS + ' months (s.33)');
+    }
+
+    // Red flags recorded by the analyst. Unknown ids are ignored.
+    var redFlags = [];
+    (c.redFlags || []).forEach(function (id) {
+      var rf = find(RED_FLAGS, 'id', id);
+      if (!rf || redFlags.indexOf(rf) !== -1) return;
+      redFlags.push(rf);
+      add('Red flag: ' + rf.name, rf.points, 'CJA 2010 s.39, Sch. 4');
+    });
 
     var score = factors.reduce(function (s, f) { return s + f.points; }, 0);
     var tier = TIERS.filter(function (t) { return score >= t.min && score <= t.max; })[0].id;
@@ -350,6 +368,7 @@
       cddIssues: cddIssues,
       cddComplete: cddIssues.length === 0,
       sanctionsBlocked: sanctionsStrong,
+      redFlags: redFlags.map(function (rf) { return rf.id; }),
       pendingHits: pendingHits.length,
       reviewMonths: find(TIERS, 'id', tier).reviewMonths
     };
@@ -369,8 +388,13 @@
     if (!a.cddComplete) {
       return { code: 'CDD_INCOMPLETE', text: 'CDD incomplete. The relationship cannot be established until identity and ownership are verified (s.33).', allowed: ['request_info', 'reject'] };
     }
+    var flags = a.redFlags && a.redFlags.length;
+    var flagText = flags ? ' ' + a.redFlags.length + ' red flag(s) recorded: each one must be explained with evidence before approval, or the case escalated to the MLRO (s.42).' : '';
     if (a.eddRequired) {
-      return { code: 'EDD', text: 'High risk: apply enhanced due diligence. Approval needs EDD completion by a senior analyst or the MLRO' + (a.mandatoryEDD.length ? ', who must be a different person from the case preparer (senior management approval, four eyes).' : '.'), allowed: ['approve', 'reject', 'escalate', 'request_info'] };
+      return { code: 'EDD', text: 'High risk: apply enhanced due diligence. Approval needs EDD completion by a senior analyst or the MLRO' + (a.mandatoryEDD.length ? ', who must be a different person from the case preparer (senior management approval, four eyes).' : '.') + flagText, allowed: ['approve', 'reject', 'escalate', 'request_info'] };
+    }
+    if (flags) {
+      return { code: 'RED_FLAGS', text: a.tier + ' risk with red flags.' + flagText + ' Approval needs a senior analyst or the MLRO.', allowed: ['approve', 'reject', 'escalate', 'request_info'] };
     }
     return { code: 'STANDARD', text: a.tier + ' risk: standard CDD. Analyst may approve under delegated authority.', allowed: ['approve', 'reject', 'escalate', 'request_info'] };
   }
@@ -382,6 +406,7 @@
     if (rec.allowed.indexOf(decision) === -1) return 'Decision not allowed by policy for this case: ' + rec.text;
     if (!opts.rationale || opts.rationale.trim().length < 15) return 'A written rationale of at least 15 characters is required.';
     if (decision === 'approve' && a.eddRequired && !opts.eddCompleted) return 'Confirm that EDD has been completed (source of wealth and funds) before approving a High risk case.';
+    if (decision === 'approve' && a.redFlags && a.redFlags.length && !opts.redFlagsExplained) return 'Confirm that every red flag has been explained and evidenced before approving.';
     return null;
   }
 
@@ -445,7 +470,7 @@
       total: cases.length,
       byStatus: { 'Pending review': 0, 'Info requested': 0, 'Escalated': 0, 'Approved': 0, 'Rejected': 0 },
       byTier: { Low: 0, Medium: 0, High: 0 },
-      eddCases: 0, cddIncomplete: 0, escalated: 0,
+      eddCases: 0, cddIncomplete: 0, escalated: 0, redFlagCases: 0,
       hits: 0, sanctionsHits: 0, pepHits: 0, reviewedHits: 0, falsePositives: 0, trueMatches: 0,
       decided: 0, avgHoursToDecision: 0
     };
@@ -455,6 +480,7 @@
       m.byTier[c.assessment.tier]++;
       if (c.assessment.eddRequired) m.eddCases++;
       if (!c.assessment.cddComplete) m.cddIncomplete++;
+      if (c.assessment.redFlags && c.assessment.redFlags.length) m.redFlagCases++;
       if (c.status === 'Escalated' || (c.audit || []).some(function (e) { return e.type === 'escalate'; })) m.escalated++;
       (c.hits || []).forEach(function (h) {
         m.hits++;
@@ -494,6 +520,78 @@
     { id: 'cnpj', name: 'CNPJ, Receita Federal (Brazil)' },
     { id: 'other', name: 'Other official register' }
   ];
+
+  // ---------------------------------------------------------------------------
+  // Proof of address (POLICY.md section 5.2)
+  // ---------------------------------------------------------------------------
+
+  var ADDRESS_PROOF_MAX_MONTHS = 6;
+  var ADDRESS_DOC_TYPES = [
+    { id: 'utility', name: 'Utility bill (electricity, gas, water, broadband)' },
+    { id: 'bank', name: 'Bank or credit union statement' },
+    { id: 'gov', name: 'Government letter (e.g. Revenue, Social Protection, Finanças)' },
+    { id: 'insurance', name: 'Home or motor insurance policy' },
+    { id: 'tenancy', name: 'Tenancy agreement or mortgage statement' }
+  ];
+
+  // Calendar day n months before the given day (clamped to the end of shorter months).
+  function monthsBefore(day, n) {
+    var y = Number(day.slice(0, 4)), m = Number(day.slice(5, 7)) - 1 - n, d = Number(day.slice(8, 10));
+    y += Math.floor(m / 12); m = ((m % 12) + 12) % 12;
+    var last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+    var p = function (v) { return (v < 10 ? '0' : '') + v; };
+    return y + '-' + p(m + 1) + '-' + p(Math.min(d, last));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Red flags (POLICY.md section 6A)
+  // ---------------------------------------------------------------------------
+
+  // Indicators that something does not add up. A red flag is not proof of wrongdoing: it has to
+  // be explained with evidence, or escalated to the MLRO. Points are illustrative.
+  var RED_FLAGS = [
+    { id: 'doc_inconsistent', group: 'Documents', name: 'Documents inconsistent with each other (name, date of birth or address differ)', points: 15 },
+    { id: 'doc_altered', group: 'Documents', name: 'Document appears altered, cropped or of unusually poor quality', points: 20 },
+    { id: 'address_mismatch', group: 'Documents', name: 'Proof of address does not match the address given on the application', points: 15 },
+    { id: 'reluctant', group: 'Behaviour', name: 'Customer reluctant or repeatedly slow to provide information', points: 10 },
+    { id: 'urgency', group: 'Behaviour', name: 'Unusual urgency or pressure to complete quickly', points: 10 },
+    { id: 'intermediary', group: 'Behaviour', name: 'Acting through an intermediary with no clear reason', points: 10 },
+    { id: 'funds_mismatch', group: 'Funds', name: 'Funds not consistent with known income, occupation or business size', points: 20 },
+    { id: 'third_party', group: 'Funds', name: 'Funds coming from an unconnected third party', points: 20 },
+    { id: 'cash', group: 'Funds', name: 'Large cash element with no clear explanation', points: 20 },
+    { id: 'complex', group: 'Structure', name: 'Unnecessarily complex structure or no clear commercial rationale', points: 15 },
+    { id: 'jurisdiction', group: 'Structure', name: 'Unexplained link to a higher risk jurisdiction', points: 15 }
+  ];
+
+  // ---------------------------------------------------------------------------
+  // Information request to the customer (POLICY.md section 9A)
+  // ---------------------------------------------------------------------------
+
+  // Builds the list of outstanding items and a draft message for the customer.
+  // Tipping off (s.49): the text only asks for documents. It never mentions screening hits,
+  // PEP status, red flags, risk ratings or the MLRO.
+  function infoRequest(c, a) {
+    var items = [];
+    function has(re) { return (a.cddIssues || []).some(function (i) { return re.test(i); }); }
+    if (has(/^Identity not verified/)) items.push('A clear colour copy of a valid photo ID (passport, national ID card or driving licence).');
+    if (has(/^Identity document expired/)) items.push('A copy of your renewed photo ID, as the document on file has expired.');
+    var flags = a.redFlags || [];
+    function flagged(list) { return list.some(function (id) { return flags.indexOf(id) !== -1; }); }
+    if (flagged(['doc_inconsistent', 'doc_altered'])) items.push('New, clear colour copies of your photo ID and proof of address, as the copies we received could not be accepted.');
+    if (has(/^Address not verified|^Proof of address/) || flagged(['address_mismatch'])) items.push('A proof of address dated within the last ' + ADDRESS_PROOF_MAX_MONTHS + ' months, showing your full name and current address (utility bill, bank statement or government letter).');
+    if (has(/^No beneficial owner/)) items.push('The name, date of birth and percentage held by every person who owns or controls more than 25% of the business.');
+    if (has(/^Business registration/)) items.push('An up to date extract from the official business register showing the registered name, number and directors.');
+    if (!c.sourceOfFunds || !String(c.sourceOfFunds).trim()) items.push('A short explanation of where the funds for this relationship come from, with supporting evidence (for example payslips or bank statements).');
+    else if (a.eddRequired || flagged(['funds_mismatch', 'third_party', 'cash'])) items.push('Evidence of your source of funds and source of wealth (for example bank statements, payslips, accounts or a sale agreement).');
+    if (!items.length) return { items: [], text: '' };
+    var text = 'Dear ' + (c.name || 'customer') + ',\n\n' +
+      'Thank you for your application (reference ' + (c.id || 'pending') + '). To complete the checks we are required to carry out by law, please send us the following:\n\n' +
+      items.map(function (it, i) { return (i + 1) + '. ' + it; }).join('\n') + '\n\n' +
+      'Please reply within 14 days. We cannot progress your application until we receive these items. Documents must be complete, legible and in date.\n\n' +
+      'If you have any questions about what is needed, reply to this message and we will be glad to help.\n\n' +
+      'Kind regards,\nCompliance team';
+    return { items: items, text: text };
+  }
 
   // ---------------------------------------------------------------------------
   // Ongoing monitoring: periodic and event driven reviews (POLICY.md section 12)
@@ -689,6 +787,8 @@
     screenName: screenName, screenCase: screenCase, assess: assess, recommend: recommend,
     validateDecision: validateDecision, parseSanctionsCSV: parseSanctionsCSV, metrics: metrics,
     ID_DOC_TYPES: ID_DOC_TYPES, REGISTRIES: REGISTRIES,
+    ADDRESS_DOC_TYPES: ADDRESS_DOC_TYPES, ADDRESS_PROOF_MAX_MONTHS: ADDRESS_PROOF_MAX_MONTHS, monthsBefore: monthsBefore,
+    RED_FLAGS: RED_FLAGS, infoRequest: infoRequest,
     REVIEW_TRIGGERS: REVIEW_TRIGGERS, REVIEW_DUE_SOON_DAYS: REVIEW_DUE_SOON_DAYS, reviewState: reviewState,
     EXCEPTION_TYPES: EXCEPTION_TYPES, EXCEPTION_MAX_DAYS: EXCEPTION_MAX_DAYS, validateException: validateException, exceptionState: exceptionState,
     QA_CHECKS: QA_CHECKS, QA_SAMPLE_EVERY: QA_SAMPLE_EVERY, qaSelected: qaSelected, decider: decider, validateQA: validateQA, scoreQA: scoreQA,

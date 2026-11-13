@@ -57,6 +57,7 @@ The CJA 2010 requires a designated person to assess the ML/TF risk of its busine
 | | Monthly volume above EUR 250,000 | 20 | s.30B |
 | Source of funds | Not provided | 10 | s.35 (purpose and intended nature of the relationship) |
 | Adverse media | Negative news linked to financial crime | 20 | s.39 |
+| Red flags | Each red flag recorded by the analyst (section 6A) | 10 to 20 each | s.39, Schedule 4 |
 
 ### 4.2 Risk tiers
 
@@ -89,7 +90,21 @@ Companies, trusts and sole traders are also checked on the official register, an
 
 The identity document type is recorded too (passport, national ID card such as the Portuguese Cartão de Cidadão or the Brazilian RG, residence permit or driving licence).
 
-**Rule in the simulator:** if identity verification fails, the ID document has expired, the business registration was not verified on the official register, or a corporate customer has no identified UBO, CDD is **incomplete**. The case cannot be approved. It can only be returned for more information or rejected. Section 33 does not allow a business relationship to proceed where CDD cannot be applied.
+### 5.2 Proof of address
+
+Individuals and sole traders must also provide a proof of address. For companies and trusts the registered office is confirmed on the official register (section 5.1).
+
+| Requirement | Detail |
+|---|---|
+| Acceptable documents | Utility bill, bank or credit union statement, government letter (for example Revenue or Social Protection), home or motor insurance policy, tenancy agreement or mortgage statement |
+| Content | The customer's full name and current address, matching the application |
+| Age | Dated within the last **6 months** at onboarding and at each review |
+
+The Act requires the customer's identity to be verified from reliable and independent sources (s.33). Verifying the address with a recent document is the firm's way of meeting that requirement, in line with the Central Bank AML Guidelines. The 6 month limit is a firm policy choice, not a figure set by the Act.
+
+**Rule in the simulator:** the document type and its date are recorded with the case. If the address was not verified, or the document is undated, dated in the future or older than 6 months on the day it is assessed, CDD is **incomplete**. During a review the document is checked against the review date, so a proof that was valid at onboarding has to be renewed. A proof slightly over the limit can only be accepted through a documented exception (section 12A).
+
+**Rule in the simulator:** if identity verification fails, the ID document has expired, the proof of address is missing or out of date, the business registration was not verified on the official register, or a corporate customer has no identified UBO, CDD is **incomplete**. The case cannot be approved. It can only be returned for more information or rejected. Section 33 does not allow a business relationship to proceed where CDD cannot be applied.
 
 ## 6. Enhanced due diligence (EDD)
 
@@ -130,6 +145,32 @@ PEP status is identified in two ways:
 
 A potential PEP match must be confirmed or cleared by the analyst. A confirmed PEP triggers mandatory EDD and senior management approval (section 6).
 
+## 6A. Red flags
+
+A red flag is an indicator that something does not add up. It is not proof of wrongdoing. Its purpose is to make sure the analyst stops, asks, and records the answer instead of simply processing the file. The list below is based on the higher risk factors in Schedule 4 of the Act and on common typologies:
+
+| Group | Red flag | Points |
+|---|---|---|
+| Documents | Documents inconsistent with each other (name, date of birth or address differ) | 15 |
+| Documents | Document appears altered, cropped or of unusually poor quality | 20 |
+| Documents | Proof of address does not match the address given on the application | 15 |
+| Behaviour | Customer reluctant or repeatedly slow to provide information | 10 |
+| Behaviour | Unusual urgency or pressure to complete quickly | 10 |
+| Behaviour | Acting through an intermediary with no clear reason | 10 |
+| Funds | Funds not consistent with known income, occupation or business size | 20 |
+| Funds | Funds coming from an unconnected third party | 20 |
+| Funds | Large cash element with no clear explanation | 20 |
+| Structure | Unnecessarily complex structure or no clear commercial rationale | 15 |
+| Structure | Unexplained link to a higher risk jurisdiction | 15 |
+
+**Rules in the simulator:**
+
+* Any analyst can record or withdraw a red flag on an open case, with a note describing what was seen. The change and the new risk score are written to the audit trail.
+* Each flag adds its points to the risk score (s.39: enhanced measures where the risk is higher), so several flags move a case to Medium or High risk.
+* A case with red flags cannot be approved by an analyst, even under delegated authority. It goes to a senior analyst or the MLRO.
+* The approver must confirm that every red flag has been explained by the customer and that the explanation is supported by evidence on file. Otherwise the approval is refused.
+* If the explanation is not credible, the case is escalated to the MLRO, who decides whether a suspicious transaction report is needed (s.42, section 10).
+
 ## 9. Decisions and escalation
 
 | Situation | Allowed decisions |
@@ -140,10 +181,17 @@ A potential PEP match must be confirmed or cleared by the analyst. A confirmed P
 | High risk with EDD completed (approval by a senior analyst or the MLRO, see section 10A) | Approve, reject or escalate |
 | Medium risk | Approve, reject or escalate |
 | Low risk | Approve, reject or escalate |
+| Any risk tier with red flags (section 6A) | Approve only by a senior analyst or the MLRO after every flag is explained; otherwise request information, escalate or reject |
 
 **Human in the loop:** the simulator never approves a customer automatically. It produces a recommendation, and a named analyst must record the final decision with a written rationale.
 
 **Approval under delegated authority:** analysts with delegated authority may approve Low and Medium risk cases. High risk approvals belong to senior analysts and the MLRO (section 10A).
+
+## 9A. Information requests to the customer
+
+When information or documents are missing, the analyst asks the customer for them in writing and the case moves to "Info requested". The simulator builds the list of outstanding items from the case (identity document, proof of address, beneficial owners, business register extract, source of funds and, for High risk or funds related red flags, evidence of source of funds and wealth) and drafts the message.
+
+**Rule in the simulator:** the draft only asks for documents and gives a deadline. It never mentions screening results, PEP status, red flags, risk ratings or the MLRO, so that a routine request can never tip off a customer (s.49). This is checked by a unit test.
 
 ## 10. Suspicious activity and tipping off
 
@@ -245,6 +293,7 @@ The dashboard reports the following KYC and AML metrics so that management can m
 
 * Sanctions and PEP sample data are fictional. Real screening must use the current official lists.
 * The high risk third country list is an illustrative subset and changes regularly.
+* Proof of address and red flags are recorded by the analyst. The simulator does not read or authenticate documents.
 * Identity verification is simulated with a checkbox. Real onboarding uses document checks and electronic verification providers.
 * Risk weights are illustrative. A real firm calibrates them from its own business wide risk assessment.
 

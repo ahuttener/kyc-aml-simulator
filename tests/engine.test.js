@@ -281,4 +281,85 @@ test('company registration not verified makes CDD incomplete; older cases are un
   assert.strictEqual(K.assess(co, [], lists).cddComplete, true);
 });
 
+// --- Proof of address ------------------------------------------------------
+test('proof of address: missing, undated, future dated or older than 6 months makes CDD incomplete', function () {
+  assert.strictEqual(K.assess(base(), [], lists).cddComplete, true, 'older cases without the field are unaffected');
+  function issues(extra) { return K.assess(base(extra), [], lists).cddIssues.join(' | '); }
+  assert.ok(/Address not verified/.test(issues({ addressVerified: false })));
+  assert.ok(/date not recorded/.test(issues({ addressVerified: true, addressDocDate: '' })));
+  assert.ok(/dated in the future/.test(issues({ addressVerified: true, addressDocDate: '2026-12-01' })));
+  assert.ok(/older than 6 months/.test(issues({ addressVerified: true, addressDocDate: '2026-05-07' })));
+  assert.strictEqual(issues({ addressVerified: true, addressDocDate: '2026-05-08' }), '', 'exactly 6 months old is still accepted');
+  assert.strictEqual(issues({ addressVerified: true, addressDocDate: '2026-10-20' }), '');
+});
+
+test('proof of address is re-checked against the review date', function () {
+  var c = base({ addressVerified: true, addressDocDate: '2026-10-20' });
+  assert.strictEqual(K.assess(c, [], lists).cddComplete, true);
+  c.reviewAsOf = '2028-11-08T10:00:00Z';
+  assert.ok(/older than 6 months/.test(K.assess(c, [], lists).cddIssues.join(' ')));
+});
+
+test('monthsBefore handles year ends and short months', function () {
+  assert.strictEqual(K.monthsBefore('2026-11-08', 6), '2026-05-08');
+  assert.strictEqual(K.monthsBefore('2026-03-15', 6), '2025-09-15');
+  assert.strictEqual(K.monthsBefore('2026-08-31', 6), '2026-02-28');
+  assert.strictEqual(K.monthsBefore('2024-08-31', 6), '2024-02-29');
+});
+
+// --- Red flags -------------------------------------------------------------
+test('red flags add risk points once each and unknown ids are ignored', function () {
+  var clean = K.assess(base(), [], lists);
+  var a = K.assess(base({ redFlags: ['funds_mismatch', 'third_party', 'funds_mismatch', 'not_a_flag'] }), [], lists);
+  assert.deepStrictEqual(a.redFlags, ['funds_mismatch', 'third_party']);
+  assert.strictEqual(a.score, clean.score + 40);
+  assert.strictEqual(a.tier, 'Medium');
+  assert.strictEqual(K.recommend(a).code, 'RED_FLAGS');
+  assert.deepStrictEqual(clean.redFlags, []);
+});
+
+test('a case with red flags cannot be approved by an analyst and needs the flags explained', function () {
+  var c = base({ redFlags: ['doc_inconsistent'], status: 'Pending review', createdById: 'u-trainee' });
+  c.assessment = K.assess(c, [], lists);
+  var analyst = K.DEMO_USERS.filter(function (u) { return u.id === 'u-analyst'; })[0];
+  var senior = K.DEMO_USERS.filter(function (u) { return u.id === 'u-senior'; })[0];
+  assert.ok(/red flags/.test(K.authorize('approve', analyst, c)));
+  assert.strictEqual(K.authorize('approve', senior, c), null);
+  assert.strictEqual(K.authorize('escalate', analyst, c), null, 'the analyst can still escalate');
+  assert.strictEqual(K.authorize('record_red_flag', analyst, c), null);
+  assert.ok(K.authorize('record_red_flag', K.DEMO_USERS.filter(function (u) { return u.role === 'auditor'; })[0], c));
+  var rationale = 'Difference explained by a married name, marriage certificate on file.';
+  assert.ok(/red flag/.test(K.validateDecision('approve', c.assessment, { rationale: rationale })));
+  assert.strictEqual(K.validateDecision('approve', c.assessment, { rationale: rationale, redFlagsExplained: true }), null);
+  assert.strictEqual(K.validateDecision('escalate', c.assessment, { rationale: rationale }), null);
+});
+
+test('red flag cases are counted in the metrics', function () {
+  var c1 = base({ redFlags: ['cash'], status: 'Pending review', hits: [], audit: [] }); c1.assessment = K.assess(c1, [], lists);
+  var c2 = base({ status: 'Pending review', hits: [], audit: [] }); c2.assessment = K.assess(c2, [], lists);
+  assert.strictEqual(K.metrics([c1, c2]).redFlagCases, 1);
+});
+
+// --- Information request ---------------------------------------------------
+test('information request lists what is outstanding and nothing when the file is complete', function () {
+  var done = base({ addressVerified: true, addressDocDate: '2026-10-20' });
+  assert.deepStrictEqual(K.infoRequest(done, K.assess(done, [], lists)), { items: [], text: '' });
+  var c = base({ id: 'KYC-2001', idVerified: false, addressVerified: false, sourceOfFunds: '' });
+  var r = K.infoRequest(c, K.assess(c, [], lists));
+  assert.strictEqual(r.items.length, 3);
+  assert.ok(/photo ID/.test(r.text) && /proof of address/.test(r.text) && /where the funds/.test(r.text));
+  assert.ok(/KYC-2001/.test(r.text) && /Mary Murphy/.test(r.text));
+  var co = base({ customerType: 'company', registryVerified: false, ubos: [] });
+  var rc = K.infoRequest(co, K.assess(co, [], lists));
+  assert.ok(/more than 25%/.test(rc.text) && /business register/.test(rc.text));
+});
+
+test('information request never tips off the customer (s.49)', function () {
+  var c = base({ name: 'Helena Marchetti', dob: '1970-04-12', pepDeclared: true, adverseMedia: true, country: 'IR', addressVerified: false,
+    redFlags: K.RED_FLAGS.map(function (f) { return f.id; }) });
+  var hits = K.screenCase(c, lists), r = K.infoRequest(c, K.assess(c, hits, lists));
+  assert.ok(r.items.length >= 3);
+  assert.ok(!/sanction|pep|politically|red flag|suspic|mlro|risk|screen|adverse|escalat|report/i.test(r.text), r.text);
+});
+
 console.log('\n' + passed + ' tests passed');

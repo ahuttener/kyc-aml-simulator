@@ -112,7 +112,7 @@
   .muted { color: var(--muted); }
   .rec { border-left: 4px solid var(--info); background: rgba(37,99,235,.1); padding: 10px 14px; border-radius: 8px; margin: 8px 0 14px; }
   .rec.BLOCK { border-color: var(--high); background: rgba(220,38,38,.1); }
-  .rec.CDD_INCOMPLETE, .rec.REVIEW_HITS { border-color: var(--med); background: rgba(217,119,6,.1); }
+  .rec.CDD_INCOMPLETE, .rec.REVIEW_HITS, .rec.RED_FLAGS { border-color: var(--med); background: rgba(217,119,6,.1); }
   .rec.EDD { border-color: var(--high); background: rgba(220,38,38,.08); }
   .rec.STANDARD { border-color: var(--low); background: rgba(22,163,74,.1); }
   .score { font-family: Orbitron, Roboto, sans-serif; font-size: 30px; font-weight: 700; color: #fff; }
@@ -126,6 +126,8 @@
   .ubo { display: grid; grid-template-columns: 2fr 1.2fr 0.8fr auto; gap: 8px; margin-bottom: 8px; }
   .err { color: #f87171; font-weight: 600; margin-top: 8px; }
   .ok { color: #4ade80; font-weight: 600; margin-top: 8px; }
+  .flag-group { font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted, #8892a0); margin: 10px 0 2px; }
+  .mail { width: 100%; min-height: 220px; font-family: inherit; font-size: 12.5px; line-height: 1.5; }
   .hit { border: 1px solid var(--line); background: var(--panel2); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
   .hidden { display: none !important; }
   footer { text-align: center; color: var(--muted); font-size: 12px; padding: 22px; border-top: 1px solid var(--line); }
@@ -236,6 +238,14 @@
           <div class="field" style="padding-top:22px"><label class="check"><input type="checkbox" name="idVerified"> Identity verified against a reliable, independent source</label></div>
         </div>
 
+        <div id="addr-block">
+          <div class="row">
+            <div class="field"><label>Proof of address</label><select name="addressDocType" id="f-addrdoc"></select></div>
+            <div class="field"><label>Date on the proof of address</label><input type="date" name="addressDocDate"></div>
+          </div>
+          <label class="check"><input type="checkbox" name="addressVerified"> Address verified: document shows the customer's full name and current address, dated within the last 6 months</label>
+        </div>
+
         <div id="biz-block" class="hidden">
           <div class="row">
             <div class="field"><label>Business register</label><select name="registry" id="f-registry"></select></div>
@@ -257,6 +267,10 @@
         </div>
         <label class="check"><input type="checkbox" name="pepDeclared"> Customer or a beneficial owner declares PEP status (s.37)</label>
         <label class="check"><input type="checkbox" name="adverseMedia"> Adverse media linked to financial crime found</label>
+
+        <h3 style="margin-top:16px">4. Red flags noticed during the review (s.39, Sch. 4)</h3>
+        <p class="muted" style="font-size:12.5px;margin:0 0 4px">Tick anything that does not add up. A red flag is not proof of wrongdoing, but it must be explained with evidence or escalated.</p>
+        <div id="f-flags"></div>
         <div style="margin-top:14px"><button class="btn" type="submit">Screen and create case</button></div>
         <div id="form-msg"></div>
       </form>
@@ -383,6 +397,9 @@
         <tbody>
           <tr><td>Risk based approach</td><td>Points based score from customer type, geography, sector, PEP status, ownership, volume, source of funds and adverse media. Tiers: Low 0 to 24, Medium 25 to 49, High 50 or more.</td><td class="ref">CJA 2010 s.30A, s.30B</td></tr>
           <tr><td>Customer due diligence</td><td>Identity must be verified and, for companies, beneficial owners identified. Otherwise CDD is incomplete and approval is blocked.</td><td class="ref">s.33, s.35</td></tr>
+          <tr><td>Proof of address</td><td>Individuals and sole traders need an acceptable proof of address (utility bill, bank statement, government letter) dated within the last 6 months. A missing, undated, future dated or older document makes CDD incomplete, and it is re-checked at every review.</td><td class="ref">s.33, Central Bank AML Guidelines</td></tr>
+          <tr><td>Red flags</td><td>The analyst records indicators that something does not add up (inconsistent or altered documents, funds that do not match the profile, third party funds, cash, urgency, complex structures). Each flag adds risk points, must be explained before approval, and takes approval away from the analyst: only a senior analyst or the MLRO can approve.</td><td class="ref">s.39, Sch. 4, s.42</td></tr>
+          <tr><td>Information requests</td><td>Outstanding items are turned into a draft message to the customer that only asks for documents. It never mentions screening hits, PEP status, red flags or the MLRO.</td><td class="ref">s.33, s.49 (tipping off)</td></tr>
           <tr><td>Simplified due diligence</td><td>Only for Low risk cases without any mandatory EDD trigger.</td><td class="ref">s.34A</td></tr>
           <tr><td>PEPs</td><td>Self declaration plus list screening. Confirmed PEPs force High risk, EDD and senior management approval.</td><td class="ref">s.37</td></tr>
           <tr><td>High risk third countries</td><td>Forces High risk, EDD and senior management approval.</td><td class="ref">s.38A</td></tr>

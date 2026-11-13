@@ -17,6 +17,9 @@ Every rule in the engine is mapped to a written policy ([docs/POLICY.md](docs/PO
 | Onboarding | Individual, sole trader, company and trust customers, with beneficial owner (UBO) capture and a live risk preview | CJA 2010 s.33, s.35 |
 | Screening | Fuzzy name matching (Jaro Winkler, token sorting, alias matching, legal suffix removal) against sanctions and PEP lists for the customer and every UBO. Date of birth used to downgrade conflicting matches | EU sanctions regulations, s.37 |
 | Risk scoring | Points based customer risk score from customer type, geography, sector, PEP status, ownership transparency, expected volume, source of funds and adverse media. Low, Medium and High tiers | s.30A, s.30B |
+| Proof of address | Document type and date for individuals and sole traders. Missing, undated, future dated or older than 6 months makes CDD incomplete, and it is re-checked at every review | s.33, Central Bank guidelines |
+| Red flags | 11 indicators in four groups (documents, behaviour, funds, structure). Each adds risk points, must be explained before approval, and removes approval from the analyst: only a senior analyst or the MLRO can approve | s.39, Sch. 4, s.42 |
+| Information requests | Draft message to the customer listing the outstanding items. It never mentions screening, red flags or the MLRO | s.33, s.49 |
 | Due diligence | CDD completeness checks (identity verification, expired ID, missing UBO). Mandatory EDD for PEPs and EU high risk third countries, with senior management approval | s.33, s.34A, s.37, s.38A, s.39 |
 | Decisions | Policy enforced decisions (approve, reject, request information, escalate to MLRO). A named analyst and a written rationale are always required. Strong sanctions matches cannot be cleared by the analyst | s.42, s.49 |
 | Access control (IAM) | RBAC combined with attribute based rules (ABAC): Analyst, Senior analyst, MLRO and read only Internal auditor. Least privilege, segregation of duties, four eyes approval, delegated authority granted by the MLRO, permission matrix and access log | s.54, s.37, s.38A |
@@ -30,7 +33,7 @@ Every rule in the engine is mapped to a written policy ([docs/POLICY.md](docs/PO
 
 ## Screenshots
 
-Load the demo cases from the dashboard, then switch users in the header to see 21 realistic cases, including a sanctions match on a name variant, a cleared false positive, a confirmed PEP approved after EDD, a company with no disclosed beneficial owner and a high risk third country escalation. Payments and e-commerce sellers from Portugal and Brazil, with case notes in Portuguese, show an overdue periodic review, an event driven review after an expired Cartão de Cidadão, a volume spike under review, a CNPJ that does not match the articles, exceptions awaiting four eyes approval and a failed QA check.
+Load the demo cases from the dashboard, then switch users in the header to see 22 realistic cases, including a sanctions match on a name variant, a cleared false positive, a confirmed PEP approved after EDD, a company with no disclosed beneficial owner and a high risk third country escalation. Payments and e-commerce sellers from Portugal and Brazil, with case notes in Portuguese, show a customer whose funds do not match his payslips and come from a third party (red flags), a proof of address that is too old, an overdue periodic review, an event driven review after an expired Cartão de Cidadão, a volume spike under review, a CNPJ that does not match the articles, exceptions awaiting four eyes approval and a failed QA check.
 
 ## Run it
 
@@ -54,7 +57,7 @@ node build.js
 index.html            UI layout and styles
 src/engine.js         Rules engine: matching, risk scoring, decisions, metrics (no DOM, unit tested)
 src/app.js            UI logic, case lifecycle, demo data, browser storage
-tests/engine.test.js  35 unit tests covering matching, CDD, EDD, decisions, access control, reviews, exceptions, QA, CSV import and metrics
+tests/engine.test.js  43 unit tests covering matching, CDD, proof of address, red flags, information requests, EDD, decisions, access control, reviews, exceptions, QA, CSV import and metrics
 docs/POLICY.md        KYC and AML policy mapping every rule to the law
 build.js              Inlines the scripts into dist/index.html
 ```

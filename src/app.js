@@ -29,7 +29,12 @@
       if (raw) {
         var s = JSON.parse(raw);
         // Data saved by an older version has no exceptions register yet.
-        if (s && s.cases && s.lists && s.users) { s.exceptions = s.exceptions || []; s.exSeq = s.exSeq || 0; return s; }
+        if (s && s.cases && s.lists && s.users) {
+          s.exceptions = s.exceptions || []; s.exSeq = s.exSeq || 0;
+          // Cases saved before red flags existed have none recorded.
+          s.cases.forEach(function (c) { if (c.assessment && !c.assessment.redFlags) c.assessment.redFlags = []; });
+          return s;
+        }
       }
     } catch (e) { /* storage unavailable */ }
     return defaults();
@@ -100,6 +105,33 @@
     if (c.assessment.tier !== before) addAudit(c, 'assess', 'Risk tier changed from ' + before + ' to ' + c.assessment.tier + ' (score ' + c.assessment.score + ').', at);
   }
 
+  // Red flag checkboxes grouped by typology. cls is the class used to read them back.
+  function flagChecks(selected, cls) {
+    var groups = [];
+    K.RED_FLAGS.forEach(function (f) { if (groups.indexOf(f.group) === -1) groups.push(f.group); });
+    return groups.map(function (g) {
+      return '<div class="flag-group">' + esc(g) + '</div>' + K.RED_FLAGS.filter(function (f) { return f.group === g; }).map(function (f) {
+        return '<label class="check"><input type="checkbox" class="' + cls + '" value="' + f.id + '"' + (selected.indexOf(f.id) !== -1 ? ' checked' : '') + '> ' + esc(f.name) + ' <span class="muted">+' + f.points + '</span></label>';
+      }).join('');
+    }).join('');
+  }
+
+  function recordRedFlags(c, ids, note, at) {
+    var denied = can('record_red_flag', c); if (denied) return denied;
+    if (c.status === 'Approved' || c.status === 'Rejected') return 'The case is closed. Start a review to record new red flags.';
+    var before = (c.redFlags || []).slice().sort(), after = ids.slice().sort();
+    if (before.join('|') === after.join('|')) return 'Nothing changed.';
+    if (!note || note.trim().length < 10) return 'Describe what you saw (at least 10 characters).';
+    var added = after.filter(function (i) { return before.indexOf(i) === -1; }), removed = before.filter(function (i) { return after.indexOf(i) === -1; });
+    c.redFlags = after;
+    var tierBefore = c.assessment.tier;
+    recompute(c);
+    addAudit(c, 'redflag', (added.length ? 'Red flag(s) recorded: ' + added.map(function (i) { return nameOf(K.RED_FLAGS, i); }).join('; ') + '. ' : '') +
+      (removed.length ? 'Red flag(s) withdrawn: ' + removed.map(function (i) { return nameOf(K.RED_FLAGS, i); }).join('; ') + '. ' : '') +
+      'Note: ' + sentence(note) + '. Risk score ' + c.assessment.score + ', tier ' + c.assessment.tier + (c.assessment.tier !== tierBefore ? ' (was ' + tierBefore + ')' : '') + '.', at);
+    return null;
+  }
+
   function decide(c, decision, opts, at) {
     var err = can(decision, c) || K.validateDecision(decision, c.assessment, opts);
     if (err) return err;
@@ -107,6 +139,7 @@
     c.status = DECISION_STATUS[decision];
     var text = DECISION_LABEL[decision] + '. Rationale: ' + opts.rationale.trim();
     if (opts.eddCompleted) text += ' EDD completed.';
+    if (decision === 'approve' && c.assessment.redFlags && c.assessment.redFlags.length) text += ' ' + c.assessment.redFlags.length + ' red flag(s) explained and evidenced.';
     if (decision === 'approve' && c.assessment.mandatoryEDD.length) text += ' Senior management approval given by ' + userLabel(me()) + ' (four eyes: case prepared by ' + (c.createdBy || 'another user') + ').';
     if (decision === 'approve' || decision === 'reject') {
       if (!c.decidedAt) c.decidedAt = at; // first decision: feeds the time to onboard metric
@@ -159,7 +192,7 @@
   }
 
   var REVIEW_FIELDS = [['monthlyVolume', 'Expected monthly volume (EUR)'], ['sourceOfFunds', 'Source of funds'], ['country', 'Country'], ['idExpiry', 'ID document expiry'],
-    ['idVerified', 'Identity verified'], ['adverseMedia', 'Adverse media'], ['pepDeclared', 'PEP declared']];
+    ['idVerified', 'Identity verified'], ['addressDocDate', 'Proof of address date'], ['addressVerified', 'Address verified'], ['adverseMedia', 'Adverse media'], ['pepDeclared', 'PEP declared']];
   function sentence(t) { return String(t || '').trim().replace(/[.\s]+$/, ''); }
   function fmtVal(v) { return v === true ? 'yes' : v === false ? 'no' : (v === '' || v == null) ? 'none' : String(v); }
 
@@ -292,7 +325,7 @@
     var tc = { Low: '#16a34a', Medium: '#d97706', High: '#dc2626' };
     bars($('#chart-tier'), ['Low', 'Medium', 'High'].map(function (t) { return [t, m.byTier[t]]; }), function (k) { return tc[k]; });
     bars($('#chart-hits'), [['Sanctions hits', m.sanctionsHits], ['PEP hits', m.pepHits], ['True matches', m.trueMatches], ['False positives', m.falsePositives]], function () { return '#22d3ee'; });
-    bars($('#chart-controls'), [['CDD incomplete', m.cddIncomplete], ['EDD applied', m.eddCases], ['Escalated', m.escalated], ['Rejected', m.byStatus.Rejected]], function () { return '#06b6d4'; });
+    bars($('#chart-controls'), [['CDD incomplete', m.cddIncomplete], ['EDD applied', m.eddCases], ['Red flag cases', m.redFlagCases], ['Escalated', m.escalated], ['Rejected', m.byStatus.Rejected]], function () { return '#06b6d4'; });
 
     var o = K.opsMetrics(state.cases, state.exceptions, now());
     $('#kpis2').innerHTML = kpiHtml([
@@ -333,12 +366,12 @@
   $('#btn-export').addEventListener('click', exportCSV);
 
   function exportCSV() {
-    var head = ['case_id', 'created_at', 'customer', 'type', 'country', 'sector', 'risk_score', 'risk_tier', 'edd_required', 'cdd_complete', 'hits', 'status', 'decided_at', 'next_review', 'review_state', 'open_exceptions', 'qa_result', 'audit_trail'];
+    var head = ['case_id', 'created_at', 'customer', 'type', 'country', 'sector', 'risk_score', 'risk_tier', 'edd_required', 'cdd_complete', 'hits', 'red_flags', 'status', 'decided_at', 'next_review', 'review_state', 'open_exceptions', 'qa_result', 'audit_trail'];
     var t = now();
     var rows = state.cases.map(function (c) {
       var rs = K.reviewState(c, t);
       var openEx = state.exceptions.filter(function (x) { return x.caseId === c.id && ['Pending approval', 'Approved', 'Overdue'].indexOf(K.exceptionState(x, t)) !== -1; }).length;
-      return [c.id, c.createdAt, c.name, typeName(c.customerType), countryName(c.country), c.sector, c.assessment.score, c.assessment.tier, c.assessment.eddRequired, c.assessment.cddComplete, c.hits.length, c.status, c.decidedAt || '', c.nextReview || '',
+      return [c.id, c.createdAt, c.name, typeName(c.customerType), countryName(c.country), c.sector, c.assessment.score, c.assessment.tier, c.assessment.eddRequired, c.assessment.cddComplete, c.hits.length, (c.assessment.redFlags || []).join(' '), c.status, c.decidedAt || '', c.nextReview || '',
         rs ? rs.state : '', openEx, c.qa ? c.qa.outcome : '',
         c.audit.map(function (a) { return a.at + ' [' + a.by + '] ' + a.text; }).join(' | ')];
     });
@@ -373,6 +406,8 @@
   $('#f-country').innerHTML = K.COUNTRIES.slice().sort(function (a, b) { return a.name.localeCompare(b.name); }).map(function (c) { return '<option value="' + c.code + '"' + (c.code === 'IE' ? ' selected' : '') + '>' + c.name + '</option>'; }).join('');
   $('#f-sector').innerHTML = K.SECTORS.map(function (s) { return '<option value="' + s.id + '">' + s.name + (s.highRisk ? ' (higher risk)' : '') + '</option>'; }).join('');
   $('#f-iddoc').innerHTML = K.ID_DOC_TYPES.map(function (d) { return '<option value="' + d.id + '">' + esc(d.name) + '</option>'; }).join('');
+  $('#f-addrdoc').innerHTML = K.ADDRESS_DOC_TYPES.map(function (d) { return '<option value="' + d.id + '">' + esc(d.name) + '</option>'; }).join('');
+  $('#f-flags').innerHTML = flagChecks([], 'f-flag');
   $('#f-registry').innerHTML = K.REGISTRIES.map(function (r) { return '<option value="' + r.id + '">' + esc(r.name) + '</option>'; }).join('');
 
   function addUboRow(u) {
@@ -395,6 +430,8 @@
     return {
       name: f.name.value.trim(), customerType: f.customerType.value, country: f.country.value, dob: f.dob.value,
       sector: f.sector.value, idDocType: f.idDocType.value, idExpiry: f.idExpiry.value, idVerified: f.idVerified.checked,
+      addressDocType: corp ? undefined : f.addressDocType.value, addressDocDate: corp ? undefined : f.addressDocDate.value, addressVerified: corp ? undefined : f.addressVerified.checked,
+      redFlags: $all('#f-flags .f-flag').filter(function (b) { return b.checked; }).map(function (b) { return b.value; }),
       registry: biz ? f.registry.value : undefined, registryNumber: biz ? f.registryNumber.value.trim() : undefined, registryVerified: biz ? f.registryVerified.checked : undefined,
       monthlyVolume: Number(f.monthlyVolume.value) || 0, sourceOfFunds: f.sourceOfFunds.value.trim(),
       pepDeclared: f.pepDeclared.checked, adverseMedia: f.adverseMedia.checked,
@@ -407,6 +444,7 @@
     var corp = form.elements.customerType.value === 'company' || form.elements.customerType.value === 'trust';
     $('#ubo-block').classList.toggle('hidden', !corp);
     $('#biz-block').classList.toggle('hidden', form.elements.customerType.value === 'individual');
+    $('#addr-block').classList.toggle('hidden', corp);
     $('#lbl-dob').textContent = corp ? 'Date of incorporation' : 'Date of birth';
     if (corp && !$all('#ubo-rows .ubo').length) addUboRow();
   }
@@ -494,6 +532,7 @@
     var decisionHtml = closed ? '<p>Case closed: ' + statusBadge(c.status) + (c.nextReview ? ' Next periodic review on <strong>' + fmtDate(c.nextReview) + '</strong>.' : '') + '</p>' :
       '<p class="muted">Acting as <strong>' + esc(userLabel(me())) + '</strong>' + (me().role === 'analyst' ? (me().delegatedAuthority ? ', delegated authority for Low and Medium risk' : ', no delegated approval authority') : '') + '. Case prepared by ' + esc(c.createdBy || 'unknown') + '.</p>' +
       (a.eddRequired ? '<label class="check"><input type="checkbox" id="d-edd"> EDD completed: source of wealth and source of funds established and documented</label>' : '') +
+      (a.redFlags.length ? '<label class="check"><input type="checkbox" id="d-flags"> Every red flag has been explained by the customer and the explanation is supported by evidence on file</label>' : '') +
       (a.mandatoryEDD.length ? '<p class="muted" style="font-size:12.5px">Senior management approval: approving this case records your sign off. It must be a senior analyst or the MLRO who did not prepare the case.</p>' : '') +
       '<div class="field"><label>Rationale</label><textarea id="d-rationale" placeholder="Explain the decision and the evidence relied on"></textarea></div>' +
       '<div class="toolbar">' + ['approve', 'request_info', 'escalate', 'reject'].map(function (d) {
@@ -520,13 +559,16 @@
           '<p>' + typeName(c.customerType) + ' · ' + esc(countryName(c.country)) + ' · ' + esc((K.SECTORS.filter(function (s) { return s.id === c.sector; })[0] || {}).name || '') + '</p>' +
           '<p class="muted">' + (c.dob ? ((c.customerType === 'company' || c.customerType === 'trust') ? 'Incorporated: ' : 'Date of birth: ') + esc(c.dob) + ' · ' : '') + 'Monthly volume: EUR ' + Number(c.monthlyVolume || 0).toLocaleString('en-IE') + ' · Source of funds: ' + esc(c.sourceOfFunds || 'not provided') + '</p>' + ubos +
           '<p>Identity verified: <strong>' + (c.idVerified ? 'Yes' : 'No') + '</strong>' + (c.idDocType ? ' · ' + esc(nameOf(K.ID_DOC_TYPES, c.idDocType)) : '') + (c.idExpiry ? ' · ID expiry ' + esc(c.idExpiry) : '') + ' · PEP declared: <strong>' + (c.pepDeclared ? 'Yes' : 'No') + '</strong></p>' +
+          (c.addressVerified !== undefined ? '<p>Address verified: <strong>' + (c.addressVerified ? 'Yes' : 'No') + '</strong>' + (c.addressDocType ? ' · ' + esc(nameOf(K.ADDRESS_DOC_TYPES, c.addressDocType)) : '') + (c.addressDocDate ? ' · dated ' + esc(c.addressDocDate) : '') + '</p>' : '') +
           (c.registry ? '<p>Register: ' + esc(nameOf(K.REGISTRIES, c.registry)) + (c.registryNumber ? ' · <code>' + esc(c.registryNumber) + '</code>' : '') + ' · <strong>' + (c.registryVerified ? 'checked' : 'not checked') + '</strong></p>' : '') +
           (a.cddIssues.length ? '<p class="err">CDD incomplete:<br>' + a.cddIssues.map(esc).join('<br>') + '</p>' : '<p class="ok">CDD complete</p>') +
           (a.mandatoryEDD.length ? '<p class="err">Mandatory EDD:<br>' + a.mandatoryEDD.map(esc).join('<br>') + '</p>' : '') +
         '</div>' +
         '<div class="card"><h3>Risk assessment</h3><div style="display:flex;align-items:center;gap:12px;margin-bottom:6px"><span class="score">' + a.score + '</span>' + tierBadge(a.tier) + '<span class="muted">Review every ' + a.reviewMonths + ' months</span></div>' + factorTable(a) + '</div>' +
         '<div class="card"><h3>Sanctions and PEP screening</h3>' + hitsHtml + '</div>' +
+        '<div class="card"><h3>Red flags</h3>' + redFlagsHtml(c, closed) + '</div>' +
         '<div class="card"><h3>Decision</h3>' + decisionHtml + '</div>' +
+        '<div class="card"><h3>Information request</h3>' + infoRequestHtml(c, closed) + '</div>' +
         '<div class="card"><h3>Ongoing CDD</h3>' + ongoingHtml(c) + '</div>' +
         '<div class="card"><h3>Exceptions</h3>' + caseExceptionsHtml(c) + '</div>' +
       '</div>' +
@@ -550,13 +592,36 @@
       b.addEventListener('click', function () {
         var err = decide(c, b.getAttribute('data-d'), {
           rationale: $('#d-rationale').value,
-          eddCompleted: $('#d-edd') ? $('#d-edd').checked : false
+          eddCompleted: $('#d-edd') ? $('#d-edd').checked : false,
+          redFlagsExplained: $('#d-flags') ? $('#d-flags').checked : false
         });
         if (err) { $('#d-msg').innerHTML = '<div class="err">' + esc(err) + '</div>'; return; }
         save(); renderCase();
       });
     });
     bindCaseExtras(c, el);
+  }
+
+  // Case detail: red flags card
+  function redFlagsHtml(c, closed) {
+    var ids = c.assessment.redFlags || [];
+    var list = ids.length ? '<ul style="margin:0 0 8px;padding-left:18px">' + ids.map(function (i) { var f = K.RED_FLAGS.filter(function (x) { return x.id === i; })[0]; return '<li>' + esc(f.name) + ' <span class="muted">(' + esc(f.group) + ', +' + f.points + ')</span></li>'; }).join('') + '</ul>' : '<p class="muted">No red flags recorded.</p>';
+    if (closed) return list + '<p class="muted" style="font-size:12.5px">The case is closed. New red flags are recorded through an event driven review.</p>';
+    if (me().role === 'auditor') return list + '<p class="muted">Read only access.</p>';
+    return (ids.length ? list : '') + '<p class="muted" style="font-size:12.5px;margin:0">Tick what does not add up. A flagged case can only be approved by a senior analyst or the MLRO, after each flag is explained with evidence.</p>' +
+      flagChecks(ids, 'rf-box') +
+      '<div class="field" style="margin-top:8px"><input type="text" id="rf-note" placeholder="What did you see? e.g. payslip shows EUR 2,400 a month, deposit of EUR 90,000"></div>' +
+      '<div class="toolbar" style="margin:0"><button class="btn ghost" id="rf-save">Save red flags</button></div><div id="rf-msg"></div>';
+  }
+
+  // Case detail: draft message asking the customer for outstanding items
+  function infoRequestHtml(c, closed) {
+    var r = K.infoRequest(c, c.assessment);
+    if (closed) return '<p class="muted">The case is closed, nothing is outstanding.</p>';
+    if (!r.items.length) return '<p class="ok">Nothing outstanding from the customer.</p>';
+    return '<p class="muted" style="font-size:12.5px;margin-top:0">' + r.items.length + ' item(s) outstanding. Draft message to the customer. It only asks for documents and never mentions screening, red flags or the MLRO (s.49 tipping off).</p>' +
+      '<textarea class="mail" id="ir-text" readonly>' + esc(r.text) + '</textarea>' +
+      '<div class="toolbar" style="margin:6px 0 0"><button class="btn ghost small" id="ir-copy">Copy message</button><span class="muted" id="ir-msg" style="font-size:12.5px"></span></div>';
   }
 
   // Case detail: ongoing CDD card
@@ -575,6 +640,7 @@
         '<div class="row"><div class="field"><label>Country</label><select id="rv-country">' + countries + '</select></div>' +
         '<div class="field"><label>ID document expiry</label><input type="date" id="rv-idExpiry" value="' + esc(c.idExpiry || '') + '"></div></div>' +
         '<label class="check"><input type="checkbox" id="rv-idVerified"' + (c.idVerified ? ' checked' : '') + '> Identity verified against a reliable, independent source</label>' +
+        (c.addressVerified !== undefined ? '<div class="row"><div class="field"><label>Date on the proof of address</label><input type="date" id="rv-addressDocDate" value="' + esc(c.addressDocDate || '') + '"></div><div class="field" style="padding-top:22px"><label class="check"><input type="checkbox" id="rv-addressVerified"' + (c.addressVerified ? ' checked' : '') + '> Address verified with a current proof of address</label></div></div>' : '') +
         '<label class="check"><input type="checkbox" id="rv-pepDeclared"' + (c.pepDeclared ? ' checked' : '') + '> Customer or a beneficial owner is a PEP</label>' +
         '<label class="check"><input type="checkbox" id="rv-adverseMedia"' + (c.adverseMedia ? ' checked' : '') + '> Adverse media linked to financial crime</label>' +
         (c.customerType === 'company' || c.customerType === 'trust' ? '<div class="field" style="margin-top:8px"><label>New beneficial owner (optional)</label><div class="ubo" style="grid-template-columns:2fr 1.2fr .8fr"><input type="text" id="rv-ubo-name" placeholder="Name"><input type="date" id="rv-ubo-dob"><input type="number" id="rv-ubo-pct" placeholder="%" min="0" max="100"></div></div>' : '') +
@@ -641,6 +707,7 @@
       var ch = {};
       ['monthlyVolume', 'sourceOfFunds', 'country', 'idExpiry'].forEach(function (k) { ch[k] = $('#rv-' + k).value.trim(); });
       ['idVerified', 'pepDeclared', 'adverseMedia'].forEach(function (k) { ch[k] = $('#rv-' + k).checked; });
+      if ($('#rv-addressDocDate')) { ch.addressDocDate = $('#rv-addressDocDate').value; ch.addressVerified = $('#rv-addressVerified').checked; }
       var un = $('#rv-ubo-name');
       if (un && un.value.trim()) ch.newUbo = { name: un.value.trim(), dob: $('#rv-ubo-dob').value, pct: $('#rv-ubo-pct').value };
       var err = updateDuringReview(c, ch);
@@ -652,6 +719,20 @@
       var err = raiseException(c, { type: $('#ex-type').value, description: $('#ex-desc').value, mitigation: $('#ex-mit').value, expiresOn: $('#ex-exp').value });
       if (err) return msg('#ex-msg', err);
       save(); renderCase();
+    });
+    var rf = $('#rf-save', el);
+    if (rf) rf.addEventListener('click', function () {
+      var ids = $all('.rf-box', el).filter(function (b) { return b.checked; }).map(function (b) { return b.value; });
+      var err = recordRedFlags(c, ids, $('#rf-note').value);
+      if (err) return msg('#rf-msg', err);
+      save(); renderCase();
+    });
+    var ic = $('#ir-copy', el);
+    if (ic) ic.addEventListener('click', function () {
+      var t = $('#ir-text');
+      try {
+        navigator.clipboard.writeText(t.value).then(function () { $('#ir-msg').textContent = 'Copied.'; }, function () { t.select(); $('#ir-msg').textContent = 'Select all and copy manually (Ctrl+C).'; });
+      } catch (e) { t.select(); $('#ir-msg').textContent = 'Select all and copy manually (Ctrl+C).'; }
     });
     var qs = $('#qa-submit', el);
     if (qs) qs.addEventListener('click', function () {
@@ -823,6 +904,8 @@
     ['Approve Low or Medium risk (delegated authority)', 'approve_low'],
     ['Approve High risk after EDD', 'approve_high'],
     ['Senior management approval, PEP and high risk country (four eyes)', 'approve_edd'],
+    ['Record red flags on a case', 'record_red_flag'],
+    ['Approve a case with red flags', 'approve_flags'],
     ['Decide escalated cases and sanctions matches', 'mlro_case'],
     ['Start a periodic or event driven review', 'start_review'],
     ['Raise an exception', 'raise_exception'],
@@ -842,6 +925,8 @@
       case 'approve_low': r = K.authorize('approve', u, fake()); break;
       case 'approve_high': r = K.authorize('approve', u, fake({ assessment: { tier: 'High', mandatoryEDD: [], sanctionsBlocked: false } })); break;
       case 'approve_edd': r = K.authorize('approve', u, fake({ assessment: { tier: 'High', mandatoryEDD: ['PEP'], sanctionsBlocked: false } })); break;
+      case 'record_red_flag': r = K.authorize('record_red_flag', u); break;
+      case 'approve_flags': r = K.authorize('approve', u, fake({ assessment: { tier: 'Medium', mandatoryEDD: [], sanctionsBlocked: false, redFlags: ['funds_mismatch'] } })); break;
       case 'mlro_case': r = K.authorize('reject', u, fake({ status: 'Escalated' })); break;
       case 'start_review': r = K.authorize('start_review', u); break;
       case 'raise_exception': r = K.authorize('raise_exception', u); break;
@@ -921,7 +1006,7 @@
       { d: 25, input: { name: 'Ateliê Bahia Moda Ltda', customerType: 'company', country: 'BR', dob: '2021-02-08', sector: 'retail', idDocType: 'national_id', idVerified: true, monthlyVolume: 90000, sourceOfFunds: 'Vendas de roupas no marketplace', registry: 'cnpj', registryNumber: '23.456.789/0001-01', registryVerified: false, ubos: [{ name: 'Juliana Santos Lima', dob: '1991-05-05', pct: '100' }] },
         act: function (c, t) { chk(decide(c, 'request_info', { rationale: 'Razão social no comprovante do CNPJ não confere com o contrato social. Pedido de documento atualizado. (EN: company name on the CNPJ record does not match the articles; updated document requested.)' }, t(3))); } },
 
-      { d: 21, input: { name: 'Siobhan Kelly', customerType: 'individual', country: 'IE', dob: '1990-07-15', sector: 'employee', idDocType: 'passport', idVerified: true, idExpiry: '2030-01-01', monthlyVolume: 3000, sourceOfFunds: 'Salary' },
+      { d: 21, input: { name: 'Siobhan Kelly', customerType: 'individual', country: 'IE', dob: '1990-07-15', sector: 'employee', idDocType: 'passport', idVerified: true, idExpiry: '2030-01-01', addressDocType: 'utility', addressDocDate: inDays(-50), addressVerified: true, monthlyVolume: 3000, sourceOfFunds: 'Salary' },
         act: function (c, t) {
           decide(c, 'approve', { rationale: 'Low risk retail customer, identity verified with passport, salary income consistent with expected activity.' }, t(3));
           as('u-senior', function () { chk(submitQA(c, qaOk(false), '', t(30))); });
@@ -951,14 +1036,16 @@
         act: function (c, t) { decide(c, 'escalate', { rationale: 'High risk third country customer. Escalated to MLRO for EDD scope and senior approval decision.' }, t(6)); } },
       { d: 9, input: { name: 'Nordlys Trading AS', customerType: 'company', country: 'NO', dob: '2011-03-03', sector: 'retail', idVerified: true, monthlyVolume: 60000, sourceOfFunds: 'Wholesale revenue', ubos: [{ name: 'Erik Solberg', dob: '1975-01-20', pct: '100' }] },
         act: function (c, t) { decide(c, 'approve', { rationale: 'EEA company, single verified beneficial owner, activity consistent with trade.' }, t(9)); } },
-      { d: 7, by: 'u-trainee', input: { name: 'Mariana Souza Costa', customerType: 'individual', country: 'BR', dob: '1992-10-10', sector: 'employee', idVerified: false, monthlyVolume: 2500, sourceOfFunds: '' },
-        act: function (c, t) { as('u-trainee', function () { chk(decide(c, 'request_info', { rationale: 'Passport image unreadable and no source of funds. Requested new document and payslip.' }, t(1))); }); } },
+      { d: 7, by: 'u-trainee', input: { name: 'Mariana Souza Costa', customerType: 'individual', country: 'BR', dob: '1992-10-10', sector: 'employee', idVerified: false, addressDocType: 'bank', addressDocDate: '', addressVerified: false, monthlyVolume: 2500, sourceOfFunds: '' },
+        act: function (c, t) { as('u-trainee', function () { chk(decide(c, 'request_info', { rationale: 'Passport image unreadable, no proof of address and no source of funds. Requested new documents and a payslip.' }, t(1))); }); } },
       { d: 5, input: { name: 'Lucky Spin Gaming Ltd', customerType: 'company', country: 'CY', dob: '2018-08-08', sector: 'gambling', idVerified: true, monthlyVolume: 300000, sourceOfFunds: 'Gaming revenue', adverseMedia: true, ubos: [{ name: 'Andreas Georgiou', dob: '1980-02-02', pct: '70' }] },
         act: function (c, t) { as('u-senior', function () { chk(decide(c, 'reject', { rationale: 'High risk sector with adverse media on licence breaches. Outside the firm risk appetite.' }, t(30))); }); } },
+      { d: 4, input: { name: 'Declan Farrell', customerType: 'individual', country: 'IE', dob: '1986-09-18', sector: 'employee', idDocType: 'passport', idVerified: true, idExpiry: '2032-03-01', addressDocType: 'bank', addressDocDate: inDays(-35), addressVerified: true, monthlyVolume: 40000, sourceOfFunds: 'Salary and a gift from a family friend abroad', redFlags: ['funds_mismatch', 'third_party'] },
+        act: function (c, t) { chk(decide(c, 'request_info', { rationale: 'Payslips show EUR 2,600 net a month, but EUR 40,000 a month is expected, funded by a family friend abroad. Asked for evidence of the gift and of the donor source of funds.' }, t(2))); } },
       { d: 3, input: { name: 'Kestrel Maritime Holdings Limited', customerType: 'company', country: 'CY', dob: '2010-01-01', sector: 'logistics', idVerified: true, monthlyVolume: 500000, sourceOfFunds: 'Shipping charters', ubos: [{ name: 'Orlan Vexby', dob: '1975-11-02', pct: '100' }] },
         act: function (c, t) { decide(c, 'escalate', { rationale: 'Entity and its beneficial owner both match the sanctions list. Escalated to MLRO immediately.' }, t(1)); } },
-      { d: 2, by: 'u-trainee', input: { name: 'Aoife Brennan', customerType: 'individual', country: 'IE', dob: '1988-06-06', sector: 'professional', idVerified: true, idExpiry: '2033-01-01', monthlyVolume: 8000, sourceOfFunds: 'Salary' }, act: null },
-      { d: 1, input: { name: 'Ferrante Marco', customerType: 'individual', country: 'IT', dob: '1991-09-09', sector: 'retail', idVerified: true, idExpiry: '2031-01-01', monthlyVolume: 4000, sourceOfFunds: 'Shop revenue' }, act: null },
+      { d: 2, by: 'u-trainee', input: { name: 'Aoife Brennan', customerType: 'individual', country: 'IE', dob: '1988-06-06', sector: 'professional', idDocType: 'passport', idVerified: true, idExpiry: '2033-01-01', addressDocType: 'gov', addressDocDate: inDays(-20), addressVerified: true, monthlyVolume: 8000, sourceOfFunds: 'Salary' }, act: null },
+      { d: 1, input: { name: 'Ferrante Marco', customerType: 'individual', country: 'IT', dob: '1991-09-09', sector: 'retail', idDocType: 'national_id', idVerified: true, idExpiry: '2031-01-01', addressDocType: 'utility', addressDocDate: inDays(-230), addressVerified: true, monthlyVolume: 4000, sourceOfFunds: 'Shop revenue' }, act: null },
       { d: 0, input: { name: 'Valdoria Infrastructure Fund', customerType: 'trust', country: 'CH', dob: '2020-01-01', sector: 'realestate', idVerified: true, monthlyVolume: 750000, sourceOfFunds: 'Investor capital', ubos: [{ name: 'Rui Sena', dob: '1959-12-19', pct: '35' }, { name: 'Pedro Nunes', dob: '1970-07-07', pct: '30' }] }, act: null }
     ];
     specs.forEach(function (s, i) {
@@ -966,7 +1053,7 @@
       if (cd.getTime() > now) cd = new Date(now - 36e5);
       var created = cd.toISOString();
       var c;
-      as(s.by || 'u-analyst', function () { c = createCase(Object.assign({ pepDeclared: false, adverseMedia: false, ubos: [] }, s.input, { createdAt: created }), created); });
+      as(s.by || 'u-analyst', function () { c = createCase(Object.assign({ pepDeclared: false, adverseMedia: false, ubos: [], redFlags: [] }, s.input, { createdAt: created }), created); });
       if (s.act) as('u-analyst', function () { s.act(c, function (h) { return new Date(new Date(created).getTime() + h * 36e5).toISOString(); }); });
       if ((s.input.customerType === 'company' || s.input.customerType === 'trust') && s.input.registryVerified === undefined) {
         // Older demo companies: record the register check that the rationale already mentions.
